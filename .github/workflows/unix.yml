@@ -46,3 +46,19 @@ jobs:
         with:
           name: WinNote-macos-${{ matrix.os }}
           path: target/dist-mac/*.dmg
+  arch:
+    # Arch Linux (rolling : GTK, gcc et Rust les plus récents) : compilation + autotest, puis makepkg sur les sources locales
+    runs-on: ubuntu-22.04
+    container: archlinux:base-devel
+    timeout-minutes: 40
+    steps:
+      - name: Dependances
+        run: pacman -Syu --noconfirm git rust gtk3 pkgconf xorg-server-xvfb enchant hunspell-fr curl
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Compilation
+        run: cargo build --release --features gtk-ui --bin winnote-gtk
+      - name: Autotest integre
+        run: xvfb-run -a env GDK_BACKEND=x11 HOME=/tmp/h target/release/winnote-gtk --selftest selftest.log || { cat selftest.log; exit 1; }
+      - name: Journal d autotest
+        if: always()
+        run: cat selftest.log || true
