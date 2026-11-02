@@ -1,6 +1,6 @@
 [package]
 name = "winnote"
-version = "0.3.1"
+version = "0.4.0"
 edition = "2021"
 description = "WinNote : éditeur de texte natif Windows 64 bits, léger (Bloc-notes + Notepad++)"
 
@@ -22,3 +22,7 @@ lto = true
 codegen-units = 1
 panic = "abort"
 strip = true
+
+[dependencies.windows]
+version = "0.58"
+features = ["Win32_Globalization", "Win32_System_Com"]

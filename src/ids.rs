@@ -92,11 +92,20 @@ pub const AUTOUPDATE: usize = 846;
 pub const MENUPOPUP: usize = 850;
 pub const SPACING: usize = 851;
 pub const PRINT: usize = 852;
+pub const NEWWINDOW: usize = 853;
+pub const BACKLINKS: usize = 854;
+pub const SPLIT: usize = 855;
+pub const SPELL: usize = 856;
+pub const DWRITE: usize = 857;
+pub const SPELLLANG: usize = 860; // 860..864
+pub const SPELLFIX: usize = 900; // 900..904
+pub const SPELLADD: usize = 905;
+pub const SPELLIGNORE: usize = 906;
 
 /// Commandes proposées dans la palette (Ctrl+Maj+P).
 pub static PALETTE_CMDS: &[(usize, &str)] = &[
     (NEW, "Fichier : nouvel onglet"), (OPEN, "Fichier : ouvrir..."), (OPENFOLDER, "Fichier : ouvrir un dossier..."), (SAVE, "Fichier : enregistrer"),
-    (SAVEAS, "Fichier : enregistrer sous..."), (SAVEALL, "Fichier : tout enregistrer"), (PRINT, "Fichier : imprimer..."), (CLOSE, "Fichier : fermer l'onglet"), (CLOSEOTHERS, "Fichier : fermer les autres onglets"),
+    (SAVEAS, "Fichier : enregistrer sous..."), (SAVEALL, "Fichier : tout enregistrer"), (PRINT, "Fichier : imprimer..."), (NEWWINDOW, "Fichier : ouvrir dans une nouvelle fenêtre"), (BACKLINKS, "Affichage : liens entrants (backlinks)"), (SPLIT, "Affichage : vue scindée"), (SPELL, "Édition : correcteur orthographique"), (DWRITE, "Format : rendu DirectWrite (texte plus lisse, +35 Mo de mémoire)"), (CLOSE, "Fichier : fermer l'onglet"), (CLOSEOTHERS, "Fichier : fermer les autres onglets"),
     (CLOSEALL, "Fichier : fermer tous les onglets"), (REOPEN, "Fichier : rouvrir l'onglet fermé"), (RELOAD, "Fichier : recharger depuis le disque"),
     (REVEALFILE, "Fichier : afficher dans l'explorateur"), (COPYPATH, "Fichier : copier le chemin"), (BROWSER, "Fichier : ouvrir dans le navigateur"),
     (FIND, "Rechercher"), (REPLACE, "Remplacer"), (FINDINFILES, "Rechercher dans le dossier ouvert"), (GOTO, "Aller à la ligne..."), (QUICKOPEN, "Ouverture rapide (onglets, récents, dossier)"),

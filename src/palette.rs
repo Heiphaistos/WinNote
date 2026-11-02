@@ -63,7 +63,7 @@ fn fuzzy(q: &str, text: &str) -> Option<i32> {
     Some(score)
 }
 
-fn walk(root: &std::path::Path, out: &mut Vec<std::path::PathBuf>, depth: u32) {
+pub fn walk(root: &std::path::Path, out: &mut Vec<std::path::PathBuf>, depth: u32) {
     if depth > 6 || out.len() > 5000 {
         return;
     }

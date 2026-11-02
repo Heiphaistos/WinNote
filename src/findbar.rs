@@ -158,10 +158,12 @@ pub fn mark_all() {
 pub fn style_indicator() {
     let a = app();
     let t = &THEMES[a.theme];
-    send(a.sci, sci::INDICSETSTYLE, INDIC, 8); // INDIC_STRAIGHTBOX
-    send(a.sci, sci::INDICSETFORE, INDIC, t.accent as isize);
-    send(a.sci, sci::INDICSETALPHA, INDIC, 70);
-    send(a.sci, sci::INDICSETOUTLINEALPHA, INDIC, 160);
+    for v in [a.sci, a.sci2] {
+        send(v, sci::INDICSETSTYLE, INDIC, 8); // INDIC_STRAIGHTBOX
+        send(v, sci::INDICSETFORE, INDIC, t.accent as isize);
+        send(v, sci::INDICSETALPHA, INDIC, 70);
+        send(v, sci::INDICSETOUTLINEALPHA, INDIC, 160);
+    }
 }
 
 fn replace_target(rep: &[u8]) {

@@ -44,7 +44,15 @@ fn set_lexer(a: &App, lang: usize) {
 }
 
 fn style_editor(a: &App) {
-    let (t, s) = (&THEMES[a.theme], a.sci);
+    style_view(a, a.sci);
+    if a.split {
+        style_view(a, a.sci2);
+    }
+    crate::spell::style_indicator();
+}
+
+fn style_view(a: &App, s: HWND) {
+    let t = &THEMES[a.theme];
     let sc = |v: i32| (v * a.dpi as i32 / 96) as isize;
     send(s, sci::STYLESETFONT, sci::STYLE_DEFAULT, cstr(&a.font).as_ptr() as isize);
     send(s, sci::STYLESETSIZE, sci::STYLE_DEFAULT, a.size as isize);
@@ -125,9 +133,11 @@ pub fn apply_all(a: &mut App) {
     if a.docs.is_empty() {
         return;
     }
-    for c in [a.sci, a.prev] {
-        send(c, sci::SETTECH, 1, 0);
-        send(c, sci::SETBUFDRAW, 0, 0);
+    for c in [a.sci, a.prev, a.sci2] {
+        // GDI par défaut (léger : ~4 Mo) ; DirectWrite en option (texte plus lisse, ~35 Mo de plus)
+        send(c, sci::SETTECH, a.dwrite as usize, 0);
+        send(c, sci::SETBUFDRAW, !a.dwrite as usize, 0);
+        send(c, 2611, 3, 0); // SCI_SETFONTQUALITY = ClearType LCD
     }
     send(a.sci, sci::SETMULTISEL, 1, 0);
     send(a.sci, sci::SETADDSELTYPING, 1, 0);
@@ -139,7 +149,7 @@ pub fn apply_all(a: &mut App) {
     style_editor(a);
     dwm_and_menus(a);
     let sb = w(if THEMES[a.theme].dark { "DarkMode_Explorer" } else { "Explorer" });
-    for c in [a.sci, a.prev] {
+    for c in [a.sci, a.prev, a.sci2] {
         unsafe { windows_sys::Win32::UI::Controls::SetWindowTheme(c, sb.as_ptr(), null()) };
     }
     crate::findbar::recolor();
@@ -155,6 +165,9 @@ pub fn refresh() {
         return;
     }
     let d = &a.docs[a.cur];
+    if a.split && send(a.sci2, 2357, 0, 0) != d.ptr {
+        send(a.sci2, sci::SETDOCPTR, 0, d.ptr);
+    }
     unsafe {
         let title = format!("{}{} - WinNote", if d.dirty { "*" } else { "" }, d.title());
         SetWindowTextW(a.hwnd, w(&title).as_ptr());
@@ -172,11 +185,17 @@ pub fn refresh() {
             chk(SIDEBAR, a.sidebar_vis && a.side_mode == 0);
             chk(OUTLINE, a.sidebar_vis && a.side_mode == 1);
             chk(PREVIEW, a.preview);
+            chk(SPLIT, a.split);
+            chk(DWRITE, a.dwrite);
+            chk(SPELL, a.spell);
+            chk(BACKLINKS, a.sidebar_vis && a.side_mode == 2);
             chk(FOLDMARGIN, a.fold);
             chk(ZEN, a.zen);
             chk(TOPMOST, a.topmost);
             chk(READONLY, send(a.sci, sci::GETREADONLY, 0, 0) != 0);
             chk(AUTOUPDATE, a.auto_update);
+            let si = crate::spell::LANGS.iter().position(|l| l.0 == a.spell_lang).unwrap_or(0);
+            CheckMenuRadioItem(m, SPELLLANG as u32, (SPELLLANG + 4) as u32, (SPELLLANG + si) as u32, MF_BYCOMMAND);
             CheckMenuRadioItem(m, THEME as u32, (THEME + THEMES.len() - 1) as u32, (THEME + a.theme) as u32, MF_BYCOMMAND);
             CheckMenuRadioItem(m, LANG as u32, (LANG + LANGS.len() - 1) as u32, (LANG + d.lang) as u32, MF_BYCOMMAND);
             let ei = Enc::ALL.iter().position(|&e| e == d.enc).unwrap_or(0);
@@ -720,17 +739,57 @@ pub fn on_command(id: usize) {
             relayout();
             refresh();
         }
-        SIDEBAR | OUTLINE => {
-            let mode = (id == OUTLINE) as u8;
+        SIDEBAR | OUTLINE | BACKLINKS => {
+            let mode = match id { OUTLINE => 1, BACKLINKS => 2, _ => 0 };
             a.sidebar_vis = !(a.sidebar_vis && a.side_mode == mode);
             relayout();
             if a.sidebar_vis {
-                if mode == 1 { crate::sidebar::show_outline() } else { crate::sidebar::show_files() }
+                match mode { 1 => crate::sidebar::show_outline(), 2 => crate::sidebar::show_backlinks(), _ => crate::sidebar::show_files() }
             }
             refresh();
         }
+        SPLIT => {
+            a.split = !a.split;
+            if a.split {
+                a.preview = false;
+            }
+            relayout();
+            style_editor(a);
+            refresh();
+        }
+        DWRITE => {
+            a.dwrite = !a.dwrite;
+            apply_all(a);
+        }
+        SPELL => {
+            a.spell = !a.spell;
+            crate::spell::check_visible();
+            refresh();
+        }
+        SPELLLANG..=864 => {
+            a.spell_lang = crate::spell::LANGS[id - SPELLLANG].0.to_string();
+            if !crate::spell::init(&a.spell_lang) {
+                msg_box("Ce dictionnaire n'est pas installé dans Windows (Paramètres > Heure et langue > Langue).");
+            }
+            crate::spell::check_visible();
+            refresh();
+        }
+        SPELLFIX..=904 => crate::spell::apply_fix(id - SPELLFIX),
+        SPELLADD => crate::spell::learn(true),
+        SPELLIGNORE => crate::spell::learn(false),
+        NEWWINDOW => match a.docs[a.cur].path.clone() {
+            Some(p) if !a.docs[a.cur].dirty => {
+                if std::env::current_exe().ok().and_then(|e| std::process::Command::new(e).arg(&p).spawn().ok()).is_some() {
+                    cmd_close(a.cur);
+                }
+            }
+            _ => msg_box("Enregistrez d'abord le fichier pour l'ouvrir dans une nouvelle fenêtre."),
+        },
         PREVIEW => {
             a.preview = !a.preview;
+            if a.preview {
+                a.split = false;
+            }
             relayout();
             crate::mdpreview::update();
             refresh();

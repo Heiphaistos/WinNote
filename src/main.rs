@@ -16,6 +16,7 @@ mod session;
 mod settings;
 mod shell;
 mod sidebar;
+mod spell;
 mod textops;
 mod theme;
 mod ui;
@@ -49,6 +50,7 @@ pub struct App {
     pub find_edit: HWND,
     pub repl_edit: HWND,
     pub prev: HWND,
+    pub sci2: HWND,
     pub palette: HWND,
     pub menus: menu::Menus,
     pub accel: HACCEL,
@@ -88,6 +90,10 @@ pub struct App {
     pub recent: Vec<String>,
     pub closed: Vec<String>,
     pub quiet: bool,
+    pub split: bool,
+    pub spell: bool,
+    pub spell_lang: String,
+    pub dwrite: bool,
 }
 
 static mut APP: *mut App = null_mut();
@@ -124,7 +130,9 @@ pub fn relayout() {
         show(a.side, sw > 0);
         MoveWindow(a.sci, sw, y0, (rc.right - sw - pw).max(0), h, 1);
         MoveWindow(a.prev, rc.right - pw, y0, pw, h, 1);
-        show(a.prev, pw > 0);
+        show(a.prev, pw > 0 && a.preview);
+        MoveWindow(a.sci2, rc.right - pw, y0, pw, h, 1);
+        show(a.sci2, pw > 0 && a.split);
         MoveWindow(a.status, 0, rc.bottom - sh, rc.right, sh, 1);
         show(a.status, sh > 0);
         findbar::layout_edits();
@@ -146,6 +154,9 @@ unsafe fn on_create(a: &mut App, h: HWND) {
     sidebar::create(h);
     a.sci = mk_child(h, "Scintilla", WS_CLIPCHILDREN | WS_VISIBLE, 1);
     mdpreview::create(h);
+    a.sci2 = mk_child(h, "Scintilla", WS_CLIPCHILDREN, 10);
+    sci::send(a.sci2, sci::SETCODEPAGE, 65001, 0);
+    sci::send(a.sci2, sci::USEPOPUP, 0, 0);
     a.menus = menu::build();
     menu::rebuild_recent(a);
     a.accel = menu::build_accel();
@@ -178,6 +189,7 @@ unsafe fn on_notify(a: &mut App, lp: LPARAM) {
         }
         sci::SCN_UPDATEUI => {
             InvalidateRect(a.status, null(), 0);
+            spell::schedule();
         }
         2001 => {
             // SCN_CHARADDED : indentation automatique (reprend celle de la ligne précédente)
@@ -195,6 +207,7 @@ unsafe fn on_notify(a: &mut App, lp: LPARAM) {
             let mt = *(hdr.add(40) as *const i32) as u32;
             if mt & (sci::SC_MOD_INSERTTEXT | sci::SC_MOD_DELETETEXT) != 0 {
                 mdpreview::schedule();
+                spell::schedule();
                 if a.sidebar_vis && a.side_mode == 1 {
                     SetTimer(a.hwnd, 2, 900, None);
                 }
@@ -215,6 +228,10 @@ unsafe fn on_timer(a: &mut App, id: usize) {
             sidebar::refresh();
         }
         3 => session::save(a),
+        9 => {
+            KillTimer(a.hwnd, 9);
+            spell::check_visible();
+        }
         4 | 5 => {
             if id == 5 {
                 KillTimer(a.hwnd, 5);
@@ -371,7 +388,7 @@ unsafe extern "system" fn wndproc(h: HWND, m: u32, wp: WPARAM, lp: LPARAM) -> LR
             }
             0
         }
-        WM_CONTEXTMENU if wp as HWND == a.sci => {
+        WM_CONTEXTMENU if wp as HWND == a.sci || wp as HWND == a.sci2 => {
             let (mut x, mut y) = ((lp & 0xFFFF) as i16 as i32, ((lp >> 16) & 0xFFFF) as i16 as i32);
             if lp == -1 {
                 let mut p = POINT { x: 40, y: 40 };

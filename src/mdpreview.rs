@@ -19,7 +19,7 @@ const BULLET: u8 = 15;
 
 pub fn width() -> i32 {
     let a = app();
-    if a.preview {
+    if a.preview || a.split {
         let mut rc: RECT = unsafe { std::mem::zeroed() };
         unsafe { GetClientRect(a.hwnd, &mut rc) };
         ((rc.right - crate::sidebar::width()) / 2).max(scale(200))

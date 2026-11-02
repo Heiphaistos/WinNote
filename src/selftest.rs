@@ -236,6 +236,46 @@ pub fn run(log_path: &str) -> i32 {
         t.check_bool(&format!("encodage {} redétecté", enc.name()), a.docs[a.cur].enc == *enc || (*enc == crate::doc::Enc::Utf8 && a.docs[a.cur].enc == crate::doc::Enc::Utf8) || (*enc == crate::doc::Enc::Ansi && a.docs[a.cur].enc == crate::doc::Enc::Ansi));
     }
 
+    // ----- correcteur orthographique -----
+    {
+        let a = app();
+        lang("Texte brut");
+        a.spell = true;
+        a.spell_lang = "fr-FR".into();
+        if crate::spell::init("fr-FR") {
+            set("Bonjour le mondde et la maison");
+            crate::spell::check_visible();
+            let pos = get().find("mondde").unwrap() as usize;
+            t.check("orthographe : mot inconnu souligné", &send(a.sci, 2507, 9, pos as isize + 2).to_string(), "1");
+            t.check("orthographe : mot correct non souligné", &send(a.sci, 2507, 9, 2).to_string(), "0");
+            let sug = crate::spell::prepare_at(pos as isize + 2);
+            t.check_bool("orthographe : suggestion « monde »", sug.iter().any(|s| s == "monde"));
+            if let Some(i) = sug.iter().position(|s| s == "monde") {
+                crate::spell::apply_fix(i);
+                t.check("orthographe : correction appliquée", &get(), "Bonjour le monde et la maison");
+            }
+        } else {
+            t.log.push("SKIP orthographe : dictionnaire fr-FR non installé".into());
+        }
+    }
+
+    // ----- vue scindée -----
+    cmds::on_command(SPLIT);
+    t.check("vue scindée : même document dans les deux vues", &(send(a.sci2, 2357, 0, 0) == send(a.sci, 2357, 0, 0)).to_string(), "true");
+    cmds::on_command(SPLIT);
+    t.check("vue scindée : désactivable", &a.split.to_string(), "false");
+
+    // ----- liens entrants -----
+    let bl = dir.join("liens");
+    std::fs::create_dir_all(&bl).unwrap();
+    std::fs::write(bl.join("cible.md"), "# Cible").unwrap();
+    std::fs::write(bl.join("a.md"), "voir [[cible]] ici").unwrap();
+    std::fs::write(bl.join("b.md"), "texte [[Cible|alias]]
+autre").unwrap();
+    std::fs::write(bl.join("c.md"), "rien").unwrap();
+    cmds::open_path(&bl.join("cible.md").to_string_lossy());
+    t.check("liens entrants trouvés (a.md et b.md)", &crate::sidebar::selftest_backlinks().to_string(), "2");
+
     // ----- indentation automatique -----
     cmds::new_doc(a);
     set("    abc");

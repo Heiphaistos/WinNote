@@ -78,6 +78,12 @@ pub fn build() -> Menus {
         add(e, SELNEXT, "Ajouter l'occurrence suivante\tAlt+D");
         add(e, OPENLINK, "Ouvrir le lien sous le curseur\tCtrl+Entrée");
         add(e, DATETIME, "Heure et date\tF5");
+        sep(e);
+        add(e, SPELL, "Correcteur orthographique");
+        let sp = sub(&[e], "Langue du correcteur");
+        for (i, (_, name)) in crate::spell::LANGS.iter().enumerate() {
+            add(sp, SPELLLANG + i, name);
+        }
 
         let l = sub(&both, "Lignes");
         add(l, MOVEUP, "Déplacer vers le haut\tAlt+↑");
@@ -101,6 +107,7 @@ pub fn build() -> Menus {
         let fm = sub(&both, "Format");
         add(fm, WRAP, "Retour automatique à la ligne");
         add(fm, FONT, "Police...");
+        add(fm, DWRITE, "Rendu DirectWrite (plus lisse, +35 Mo de mémoire)");
         let eol = sub(&[fm], "Fins de ligne");
         add(eol, EOL, "Windows (CRLF)");
         add(eol, EOL + 1, "Macintosh (CR)");
@@ -114,6 +121,8 @@ pub fn build() -> Menus {
         add(v, SIDEBAR, "Explorateur de fichiers\tCtrl+Maj+E");
         add(v, OUTLINE, "Plan du document\tCtrl+Maj+O");
         add(v, PREVIEW, "Aperçu Markdown\tCtrl+Maj+M");
+        add(v, SPLIT, "Vue scindée\tCtrl+\\");
+        add(v, BACKLINKS, "Liens entrants (backlinks)");
         add(v, LINES, "Numéros de ligne");
         add(v, FOLDMARGIN, "Marge de repli");
         add(v, WS, "Espaces et tabulations visibles");
@@ -195,7 +204,7 @@ pub fn build_accel() -> HACCEL {
         k(al, ch('D'), SELNEXT), k(al, VK_UP, MOVEUP), k(al, VK_DOWN, MOVEDOWN), k(c, VK_RETURN, OPENLINK),
         k(FVIRTKEY as u8, VK_F2, BOOKNEXT), k((FVIRTKEY | FSHIFT) as u8, VK_F2, BOOKPREV), k(c, VK_F2, BOOKTOGGLE),
         k(c, VK_TAB, TABNEXT), k(cs, VK_TAB, TABPREV), k(c, 0xBB, ZOOMIN), k(c, 0xBD, ZOOMOUT), k(c, ch('0'), ZOOMRESET),
-        k(cs, ch('P'), PALETTE), k(c, ch('P'), PRINT), k(c, ch('E'), QUICKOPEN), k(cs, ch('E'), SIDEBAR), k(cs, ch('O'), OUTLINE), k(cs, ch('M'), PREVIEW),
+        k(cs, ch('P'), PALETTE), k(c, ch('P'), PRINT), k(c, ch('E'), QUICKOPEN), k(cs, ch('E'), SIDEBAR), k(cs, ch('O'), OUTLINE), k(cs, ch('M'), PREVIEW), k(c, 0xDC, SPLIT),
     ];
     unsafe { CreateAcceleratorTableW(t.as_ptr(), t.len() as i32) }
 }
@@ -212,6 +221,23 @@ pub fn popup_at(menu: HMENU, x: i32, y: i32) {
 pub fn editor_context(x: i32, y: i32) {
     unsafe {
         let m = CreatePopupMenu();
+        let a = app();
+        let mut p = windows_sys::Win32::Foundation::POINT { x, y };
+        windows_sys::Win32::Graphics::Gdi::ScreenToClient(a.sci, &mut p);
+        let pos = crate::sci::send(a.sci, 2023, p.x as usize, p.y as isize); // SCI_POSITIONFROMPOINTCLOSE
+        let sug = if pos >= 0 { crate::spell::prepare_at(pos) } else { Vec::new() };
+        #[allow(static_mut_refs)]
+        if crate::spell::PENDING.is_some() {
+            for (i, s) in sug.iter().enumerate() {
+                add(m, SPELLFIX + i, &s.replace('&', "&&"));
+            }
+            if sug.is_empty() {
+                AppendMenuW(m, MF_STRING | MF_GRAYED, 0, w("(aucune suggestion)").as_ptr());
+            }
+            add(m, SPELLADD, "Ajouter au dictionnaire");
+            add(m, SPELLIGNORE, "Ignorer");
+            sep(m);
+        }
         for (id, t) in [(UNDO, "Annuler"), (REDO, "Rétablir"), (0, ""), (CUT, "Couper"), (COPY, "Copier"), (PASTE, "Coller"), (DEL, "Supprimer"), (0, ""), (SELALL, "Tout sélectionner"),
             (0, ""), (FIND, "Rechercher..."), (TOGGLECOMMENT, "Commenter / décommenter"), (OPENLINK, "Ouvrir le lien"), (PALETTE, "Palette de commandes...")] {
             if id == 0 { sep(m) } else { add(m, id, t) }
@@ -225,7 +251,7 @@ pub fn editor_context(x: i32, y: i32) {
 pub fn tab_context(x: i32, y: i32) {
     unsafe {
         let m = CreatePopupMenu();
-        for (id, t) in [(CLOSE, "Fermer"), (CLOSEOTHERS, "Fermer les autres"), (CLOSEALL, "Fermer tous"), (0, ""), (SAVE, "Enregistrer"), (SAVEAS, "Enregistrer sous..."),
+        for (id, t) in [(CLOSE, "Fermer"), (NEWWINDOW, "Ouvrir dans une nouvelle fenêtre"), (CLOSEOTHERS, "Fermer les autres"), (CLOSEALL, "Fermer tous"), (0, ""), (SAVE, "Enregistrer"), (SAVEAS, "Enregistrer sous..."),
             (0, ""), (COPYPATH, "Copier le chemin"), (REVEALFILE, "Afficher dans l'explorateur"), (REOPEN, "Rouvrir l'onglet fermé")] {
             if id == 0 { sep(m) } else { add(m, id, t) }
         }

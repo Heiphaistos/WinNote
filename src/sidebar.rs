@@ -164,10 +164,53 @@ pub fn show_outline() {
     }
 }
 
+/// Liens entrants : notes du dossier qui contiennent [[nom-de-la-note-courante]].
+pub fn show_backlinks() {
+    let a = app();
+    a.side_mode = 2;
+    clear();
+    let cur = a.docs[a.cur].path.clone();
+    let Some(path) = cur else {
+        insert(0, "Enregistrez la note pour voir ses liens entrants", 0, false);
+        nodes().push(Node { path: String::new(), dir: false, loaded: true, line: -1 });
+        return;
+    };
+    let p = std::path::Path::new(&path);
+    let stem = p.file_stem().map(|s| s.to_string_lossy().to_lowercase()).unwrap_or_default();
+    let base = a.root.clone().map(std::path::PathBuf::from).or_else(|| p.parent().map(|d| d.to_path_buf())).unwrap_or_default();
+    let mut files = Vec::new();
+    crate::palette::walk(&base, &mut files, 0);
+    let pats = [format!("[[{stem}]]"), format!("[[{stem}|"), format!("[[{stem}#")];
+    let mut found = 0;
+    for f in files {
+        let ext = f.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
+        if !matches!(ext.as_str(), "md" | "markdown" | "mdx" | "txt") || f == p {
+            continue;
+        }
+        let Ok(text) = std::fs::read_to_string(&f) else { continue };
+        if let Some((i, l)) = text.lines().enumerate().find(|(_, l)| {
+            let ll = l.to_lowercase();
+            pats.iter().any(|q| ll.contains(q.as_str()))
+        }) {
+            let name = f.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+            nodes().push(Node { path: f.to_string_lossy().to_string(), dir: false, loaded: true, line: i as isize });
+            insert(0, &format!("{name} : {}", l.trim().chars().take(70).collect::<String>()), nodes().len() - 1, false);
+            found += 1;
+        }
+    }
+    if found == 0 {
+        nodes().push(Node { path: String::new(), dir: false, loaded: true, line: -1 });
+        insert(0, "Aucun lien entrant", nodes().len() - 1, false);
+    }
+    unsafe { InvalidateRect(a.side, null(), 0) };
+}
+
 pub fn refresh() {
     let a = app();
     if a.sidebar_vis && a.side_mode == 1 {
         show_outline();
+    } else if a.sidebar_vis && a.side_mode == 2 {
+        show_backlinks();
     }
 }
 
@@ -197,7 +240,13 @@ fn selected_node() -> Option<usize> {
 fn activate() {
     let Some(n) = selected_node() else { return };
     let node = &nodes()[n];
-    if app().side_mode == 1 {
+    if app().side_mode == 2 {
+        if !node.path.is_empty() {
+            let (p, l) = (node.path.clone(), node.line);
+            crate::cmds::open_path(&p);
+            send(app().sci, sci::GOTOLINE, l as usize, 0);
+        }
+    } else if app().side_mode == 1 {
         send(app().sci, sci::GOTOLINE, node.line as usize, 0);
         unsafe { windows_sys::Win32::UI::Input::KeyboardAndMouse::SetFocus(app().sci) };
     } else if !node.dir {
@@ -218,8 +267,8 @@ fn paint(dc: HDC, rc: &RECT) {
         fill(rc, t.ui_bg);
         SetBkMode(dc, TRANSPARENT as i32);
         SelectObject(dc, a.ui_font);
-        let half = rc.right / 2;
-        for (i, label) in ["FICHIERS", "PLAN"].iter().enumerate() {
+        let half = rc.right / 3;
+        for (i, label) in ["FICHIERS", "PLAN", "LIENS"].iter().enumerate() {
             let mut r = RECT { left: i as i32 * half, top: 0, right: (i as i32 + 1) * half, bottom: head_h() };
             SetTextColor(dc, if a.side_mode as usize == i { t.ui_fg } else { blend(t.ui_fg, t.ui_bg, 50) });
             let v: Vec<u16> = label.encode_utf16().collect();
@@ -252,7 +301,7 @@ pub unsafe extern "system" fn proc_(h: HWND, m: u32, wp: WPARAM, lp: LPARAM) -> 
             let x = (lp & 0xFFFF) as i16 as i32;
             let mut rc: RECT = zeroed();
             GetClientRect(h, &mut rc);
-            if x < rc.right / 2 { show_files() } else { show_outline() }
+            match x * 3 / rc.right.max(1) { 0 => show_files(), 1 => show_outline(), _ => show_backlinks() }
             0
         }
         WM_NOTIFY => {
@@ -281,4 +330,10 @@ fn activate_outline_quiet() {
     if let Some(n) = selected_node() {
         send(app().sci, sci::GOTOLINE, nodes()[n].line as usize, 0);
     }
+}
+
+/// Pour l'autotest : nombre de liens entrants trouvés.
+pub fn selftest_backlinks() -> usize {
+    show_backlinks();
+    nodes().iter().filter(|n| !n.path.is_empty()).count()
 }
