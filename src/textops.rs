@@ -131,6 +131,38 @@ pub fn toggle_comment() {
     });
 }
 
+/// Ajoute la prochaine occurrence du texte sélectionné à la sélection (multi-curseurs) ; sans sélection, sélectionne le mot.
+pub fn select_next() {
+    let s = app().sci;
+    let main = send(s, 2575, 0, 0) as usize; // SCI_GETMAINSELECTION
+    let (ss, se) = (send(s, 2585, main, 0), send(s, 2587, main, 0));
+    if ss == se {
+        let p = send(s, sci::GETCURRENTPOS, 0, 0) as usize;
+        let (ws, we) = (send(s, sci::WORDSTARTPOS, p, 1), send(s, sci::WORDENDPOS, p, 1));
+        send(s, sci::SETSEL, ws as usize, we);
+        return;
+    }
+    let what = range_text(s, ss, se).into_bytes();
+    let len = send(s, sci::GETLENGTH, 0, 0);
+    let find = |a: isize, b: isize| {
+        send(s, sci::SETSEARCHFLAGS, 4, 0);
+        send(s, sci::SETTARGETSTART, a as usize, 0);
+        send(s, sci::SETTARGETEND, b as usize, 0);
+        send(s, sci::SEARCHINTARGET, what.len(), what.as_ptr() as isize)
+    };
+    let mut r = find(se, len);
+    if r < 0 {
+        r = find(0, ss);
+    }
+    if r >= 0 {
+        let (ts, te) = (send(s, sci::GETTARGETSTART, 0, 0), send(s, sci::GETTARGETEND, 0, 0));
+        if (0..send(s, 2570, 0, 0)).any(|i| send(s, 2585, i as usize, 0) == ts) {
+            return; // déjà sélectionnée : on a fait le tour
+        }
+        send(s, 2573, te as usize, ts); // SCI_ADDSELECTION(caret, anchor)
+    }
+}
+
 pub fn bookmark_toggle() {
     let s = app().sci;
     let ln = send(s, sci::LINEFROMPOS, send(s, sci::GETCURRENTPOS, 0, 0) as usize, 0) as usize;

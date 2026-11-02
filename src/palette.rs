@@ -393,3 +393,15 @@ pub unsafe extern "system" fn proc_(h: HWND, m: u32, wp: WPARAM, lp: LPARAM) -> 
         _ => DefWindowProcW(h, m, wp, lp),
     }
 }
+
+/// Aides pour l'autotest : nombre de résultats de la recherche dans le dossier, et chemins trouvés par l'ouverture rapide.
+pub fn selftest_search(q: &str) -> usize {
+    search_in_files(q).iter().filter(|i| matches!(i.act, Act::GotoIn(..))).count()
+}
+
+pub fn selftest_quick(q: &str) -> Vec<String> {
+    let items = collect(Mode::Quick);
+    let mut sc: Vec<(i32, usize)> = items.iter().enumerate().filter_map(|(i, it)| fuzzy(q, &it.label).or_else(|| fuzzy(q, &it.hint).map(|s| s - 20)).map(|s| (s, i))).collect();
+    sc.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
+    sc.into_iter().filter_map(|(_, i)| if let Act::Open(p) = &items[i].act { Some(p.clone()) } else { None }).collect()
+}

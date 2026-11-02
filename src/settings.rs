@@ -19,7 +19,7 @@ pub fn defaults() -> App {
         wrap: l.wrap, lines: l.lines, ws: false, fold: false, spacing: 0, status_vis: true, font: l.font.into(), size: l.size, margin: l.margin, dpi: 96,
         chrome: 0, sidebar_vis: false, side_mode: 0, preview: false, find_vis: false, find_replace: false, f_case: false, f_word: false, f_regex: false,
         find_count: 0, zen: false, zen_style: 0, zen_rect: RECT { left: 0, top: 0, right: 0, bottom: 0 }, topmost: false, auto_update: true,
-        root: None, recent: Vec::new(), closed: Vec::new(),
+        root: None, recent: Vec::new(), closed: Vec::new(), quiet: false,
     }
 }
 

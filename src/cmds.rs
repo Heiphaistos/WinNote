@@ -16,6 +16,9 @@ use windows_sys::Win32::{
 };
 
 pub fn msg_box(s: &str) {
+    if app().quiet {
+        return;
+    }
     unsafe { MessageBoxW(app().hwnd, w(s).as_ptr(), w("WinNote").as_ptr(), MB_OK | MB_ICONINFORMATION) };
 }
 
@@ -671,7 +674,7 @@ pub fn on_command(id: usize) {
         TITLECASE => textops::title_case(),
         TABS2SPACES => textops::tabs_to_spaces(),
         SPACES2TABS => textops::spaces_to_tabs(),
-        SELNEXT => drop(send(s, sci::SELADDNEXT, 0, 0)),
+        SELNEXT => textops::select_next(),
         OPENLINK => textops::open_link(),
         STATS => textops::stats(),
         BOOKTOGGLE => {

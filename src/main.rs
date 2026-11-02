@@ -10,6 +10,7 @@ mod menu;
 mod menubar;
 mod palette;
 mod print;
+mod selftest;
 mod sci;
 mod session;
 mod settings;
@@ -86,6 +87,7 @@ pub struct App {
     pub root: Option<String>,
     pub recent: Vec<String>,
     pub closed: Vec<String>,
+    pub quiet: bool,
 }
 
 static mut APP: *mut App = null_mut();
@@ -475,8 +477,22 @@ fn main() {
         if hwnd.is_null() {
             return;
         }
-        ShowWindow(hwnd, SW_SHOW);
+        let test = args.iter().any(|x| x == "--selftest" || x == "--print-to");
+        if !test {
+            ShowWindow(hwnd, SW_SHOW);
+        }
         let a = app();
+        if let Some(i) = args.iter().position(|x| x == "--selftest") {
+            std::process::exit(selftest::run(args.get(i + 1).map_or("selftest.log", |s| s.as_str())));
+        }
+        if let Some(i) = args.iter().position(|x| x == "--print-to") {
+            // --print-to <imprimante> <sortie.pdf> <fichier> : impression sans boîte de dialogue (tests)
+            a.quiet = true;
+            cmds::open_path(&args[i + 3]);
+            let r = print::print_to(&args[i + 1], &args[i + 2]);
+            let _ = std::fs::write(format!("{}.txt", args[i + 2]), format!("{r:?}"));
+            std::process::exit(r.is_err() as i32);
+        }
         if session::restore(a) && a.docs.len() > 1 && a.docs[0].path.is_none() && !a.docs[0].dirty && sci_empty(a, 0) {
             cmds::cmd_close(0);
         }

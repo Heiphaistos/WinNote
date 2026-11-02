@@ -86,7 +86,10 @@ fn search(st: isize, en: isize, what: &[u8]) -> isize {
     let s = app().sci;
     send(s, sci::SETTARGETSTART, st as usize, 0);
     send(s, sci::SETTARGETEND, en as usize, 0);
-    send(s, sci::SEARCHINTARGET, what.len(), what.as_ptr() as isize)
+    // le moteur regex C++11 lit un texte terminé par un zéro : sans lui, résultat aléatoire
+    let mut z = what.to_vec();
+    z.push(0);
+    send(s, sci::SEARCHINTARGET, what.len(), z.as_ptr() as isize)
 }
 
 fn query() -> Vec<u8> {
@@ -164,7 +167,9 @@ pub fn style_indicator() {
 fn replace_target(rep: &[u8]) {
     let s = app().sci;
     let m = if app().f_regex { sci::REPLACETARGETRE } else { sci::REPLACETARGET };
-    send(s, m, rep.len(), rep.as_ptr() as isize);
+    let mut z = rep.to_vec();
+    z.push(0);
+    send(s, m, rep.len(), z.as_ptr() as isize);
 }
 
 pub fn replace_one() {
@@ -398,4 +403,9 @@ pub fn recolor() {
     }
     style_indicator();
     let _ = null_mut::<u8>();
+}
+
+/// Pour l'autotest : requête courante et drapeaux de recherche.
+pub fn debug_state() -> String {
+    format!("q={:?} flags={:#x}", String::from_utf8_lossy(&query()), flags())
 }
