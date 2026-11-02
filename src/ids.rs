@@ -91,11 +91,12 @@ pub const UPDATE: usize = 845;
 pub const AUTOUPDATE: usize = 846;
 pub const MENUPOPUP: usize = 850;
 pub const SPACING: usize = 851;
+pub const PRINT: usize = 852;
 
 /// Commandes proposées dans la palette (Ctrl+Maj+P).
 pub static PALETTE_CMDS: &[(usize, &str)] = &[
     (NEW, "Fichier : nouvel onglet"), (OPEN, "Fichier : ouvrir..."), (OPENFOLDER, "Fichier : ouvrir un dossier..."), (SAVE, "Fichier : enregistrer"),
-    (SAVEAS, "Fichier : enregistrer sous..."), (SAVEALL, "Fichier : tout enregistrer"), (CLOSE, "Fichier : fermer l'onglet"), (CLOSEOTHERS, "Fichier : fermer les autres onglets"),
+    (SAVEAS, "Fichier : enregistrer sous..."), (SAVEALL, "Fichier : tout enregistrer"), (PRINT, "Fichier : imprimer..."), (CLOSE, "Fichier : fermer l'onglet"), (CLOSEOTHERS, "Fichier : fermer les autres onglets"),
     (CLOSEALL, "Fichier : fermer tous les onglets"), (REOPEN, "Fichier : rouvrir l'onglet fermé"), (RELOAD, "Fichier : recharger depuis le disque"),
     (REVEALFILE, "Fichier : afficher dans l'explorateur"), (COPYPATH, "Fichier : copier le chemin"), (BROWSER, "Fichier : ouvrir dans le navigateur"),
     (FIND, "Rechercher"), (REPLACE, "Remplacer"), (FINDINFILES, "Rechercher dans le dossier ouvert"), (GOTO, "Aller à la ligne..."), (QUICKOPEN, "Ouverture rapide (onglets, récents, dossier)"),

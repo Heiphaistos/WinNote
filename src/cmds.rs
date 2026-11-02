@@ -624,6 +624,7 @@ pub fn on_command(id: usize) {
         EXIT => unsafe {
             SendMessageW(a.hwnd, WM_CLOSE, 0, 0);
         },
+        PRINT => crate::print::print_doc(),
         RELOAD => reload(a),
         REVEALFILE => {
             if let Some(p) = &a.docs[a.cur].path {

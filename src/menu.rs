@@ -46,6 +46,7 @@ pub fn build() -> Menus {
         add(f, SAVE, "Enregistrer\tCtrl+S");
         add(f, SAVEAS, "Enregistrer sous...\tCtrl+Maj+S");
         add(f, SAVEALL, "Tout enregistrer\tCtrl+Alt+S");
+        add(f, PRINT, "Imprimer...\tCtrl+P");
         add(f, RELOAD, "Recharger depuis le disque");
         sep(f);
         add(f, REVEALFILE, "Afficher dans l'explorateur");
@@ -131,7 +132,7 @@ pub fn build() -> Menus {
         add(v, TABNEXT, "Onglet suivant\tCtrl+Tab");
         add(v, TABPREV, "Onglet précédent\tCtrl+Maj+Tab");
         add(v, PALETTE, "Palette de commandes\tCtrl+Maj+P");
-        add(v, QUICKOPEN, "Ouverture rapide\tCtrl+P");
+        add(v, QUICKOPEN, "Ouverture rapide\tCtrl+E");
 
         let th = sub(&both, "Thème");
         for (i, t) in THEMES.iter().enumerate() {
@@ -194,7 +195,7 @@ pub fn build_accel() -> HACCEL {
         k(al, ch('D'), SELNEXT), k(al, VK_UP, MOVEUP), k(al, VK_DOWN, MOVEDOWN), k(c, VK_RETURN, OPENLINK),
         k(FVIRTKEY as u8, VK_F2, BOOKNEXT), k((FVIRTKEY | FSHIFT) as u8, VK_F2, BOOKPREV), k(c, VK_F2, BOOKTOGGLE),
         k(c, VK_TAB, TABNEXT), k(cs, VK_TAB, TABPREV), k(c, 0xBB, ZOOMIN), k(c, 0xBD, ZOOMOUT), k(c, ch('0'), ZOOMRESET),
-        k(cs, ch('P'), PALETTE), k(c, ch('P'), QUICKOPEN), k(cs, ch('E'), SIDEBAR), k(cs, ch('O'), OUTLINE), k(cs, ch('M'), PREVIEW),
+        k(cs, ch('P'), PALETTE), k(c, ch('P'), PRINT), k(c, ch('E'), QUICKOPEN), k(cs, ch('E'), SIDEBAR), k(cs, ch('O'), OUTLINE), k(cs, ch('M'), PREVIEW),
     ];
     unsafe { CreateAcceleratorTableW(t.as_ptr(), t.len() as i32) }
 }

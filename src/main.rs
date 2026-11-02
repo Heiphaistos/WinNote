@@ -9,6 +9,7 @@ mod mdpreview;
 mod menu;
 mod menubar;
 mod palette;
+mod print;
 mod sci;
 mod session;
 mod settings;
