@@ -1,0 +1,104 @@
+//! Fine couche sur Scintilla (messages Win32) + liaison C vers Scintilla/Lexilla statiques.
+use std::ffi::c_void;
+use windows_sys::Win32::{Foundation::HWND, UI::WindowsAndMessaging::SendMessageW};
+
+extern "C" {
+    pub fn Scintilla_RegisterClasses(h: *mut c_void) -> i32;
+    pub fn CreateLexer(name: *const u8) -> *mut c_void;
+}
+
+pub fn send(h: HWND, m: u32, w: usize, l: isize) -> isize {
+    unsafe { SendMessageW(h, m, w, l) }
+}
+
+pub const GETLENGTH: u32 = 2006;
+pub const GETTEXT: u32 = 2182;
+pub const ADDTEXT: u32 = 2001;
+pub const SETSAVEPOINT: u32 = 2014;
+pub const EMPTYUNDO: u32 = 2175;
+pub const SETEOLMODE: u32 = 2031;
+pub const GETEOLMODE: u32 = 2030;
+pub const CONVERTEOLS: u32 = 2029;
+pub const SETCODEPAGE: u32 = 2037;
+pub const GETCURRENTPOS: u32 = 2008;
+pub const LINEFROMPOS: u32 = 2166;
+pub const GETCOLUMN: u32 = 2129;
+pub const GETLINECOUNT: u32 = 2154;
+pub const GETSELSTART: u32 = 2143;
+pub const GETSELEND: u32 = 2145;
+pub const SETSEL: u32 = 2160;
+pub const GETFIRSTVISIBLE: u32 = 2152;
+pub const SETFIRSTVISIBLE: u32 = 2613;
+pub const UNDO: u32 = 2176;
+pub const REDO: u32 = 2011;
+pub const CUT: u32 = 2177;
+pub const COPY: u32 = 2178;
+pub const PASTE: u32 = 2179;
+pub const CLEAR: u32 = 2180;
+pub const SELECTALL: u32 = 2013;
+pub const REPLACESEL: u32 = 2170;
+pub const LINEDUP: u32 = 2404;
+pub const LINEDELETE: u32 = 2338;
+pub const UPPER: u32 = 2342;
+pub const LOWER: u32 = 2340;
+pub const GOTOLINE: u32 = 2024;
+pub const SETZOOM: u32 = 2373;
+pub const GETZOOM: u32 = 2374;
+pub const ZOOMIN: u32 = 2333;
+pub const ZOOMOUT: u32 = 2334;
+pub const SETWRAP: u32 = 2268;
+pub const SETVIEWWS: u32 = 2021;
+pub const SETWSFORE: u32 = 2084;
+pub const SETINDGUIDES: u32 = 2132;
+pub const SETMARGINTYPE: u32 = 2240;
+pub const SETMARGINW: u32 = 2242;
+pub const SETMARGINLEFT: u32 = 2155;
+pub const SETMARGINRIGHT: u32 = 2157;
+pub const TEXTWIDTH: u32 = 2276;
+pub const SETTABWIDTH: u32 = 2036;
+pub const SETUSETABS: u32 = 2124;
+pub const SETSCROLLW: u32 = 2274;
+pub const SETSCROLLWTRACK: u32 = 2516;
+pub const SETTECH: u32 = 2630;
+pub const SETBUFDRAW: u32 = 2035;
+pub const SETMULTISEL: u32 = 2563;
+pub const SETADDSELTYPING: u32 = 2565;
+pub const SETMULTIPASTE: u32 = 2614;
+pub const SETVIRTUALSPACE: u32 = 2596;
+pub const SETSELBACK: u32 = 2068;
+pub const SETCARETFORE: u32 = 2069;
+pub const SETCARETW: u32 = 2188;
+pub const SETCARETLINEVIS: u32 = 2096;
+pub const SETCARETLINEBACK: u32 = 2098;
+pub const STYLECLEARALL: u32 = 2050;
+pub const STYLESETFORE: u32 = 2051;
+pub const STYLESETBACK: u32 = 2052;
+pub const STYLESETBOLD: u32 = 2053;
+pub const STYLESETITALIC: u32 = 2054;
+pub const STYLESETSIZE: u32 = 2055;
+pub const STYLESETFONT: u32 = 2056;
+pub const SETKEYWORDS: u32 = 4005;
+pub const SETILEXER: u32 = 4033;
+pub const COLOURISE: u32 = 4003;
+pub const CREATEDOC: u32 = 2375;
+pub const SETDOCPTR: u32 = 2358;
+pub const RELEASEDOC: u32 = 2377;
+pub const SETTARGETSTART: u32 = 2190;
+pub const GETTARGETSTART: u32 = 2191;
+pub const SETTARGETEND: u32 = 2192;
+pub const GETTARGETEND: u32 = 2193;
+pub const REPLACETARGET: u32 = 2194;
+pub const SEARCHINTARGET: u32 = 2197;
+pub const SETSEARCHFLAGS: u32 = 2198;
+pub const BEGINUNDO: u32 = 2078;
+pub const ENDUNDO: u32 = 2079;
+pub const SETFOCUS: u32 = 2380;
+pub const SETSELFORE: u32 = 2067;
+
+pub const STYLE_DEFAULT: usize = 32;
+pub const STYLE_LINENUM: usize = 33;
+pub const STYLE_INDENT: usize = 37;
+
+pub const SCN_SAVEPOINTREACHED: u32 = 2002;
+pub const SCN_SAVEPOINTLEFT: u32 = 2003;
+pub const SCN_UPDATEUI: u32 = 2007;
