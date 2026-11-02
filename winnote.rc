@@ -1,0 +1,29 @@
+#include <winver.h>
+
+1 ICON "winnote.ico"
+
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION 0,2,0,0
+PRODUCTVERSION 0,2,0,0
+FILEFLAGSMASK 0x3fL
+FILEOS 0x40004L
+FILETYPE 0x1L
+BEGIN
+  BLOCK "StringFileInfo"
+  BEGIN
+    BLOCK "040c04b0"
+    BEGIN
+      VALUE "CompanyName", "Heiphaistos"
+      VALUE "FileDescription", "WinNote - éditeur de texte natif Windows"
+      VALUE "FileVersion", "0.2.0"
+      VALUE "InternalName", "winnote"
+      VALUE "OriginalFilename", "winnote.exe"
+      VALUE "ProductName", "WinNote"
+      VALUE "ProductVersion", "0.2.0"
+    END
+  END
+  BLOCK "VarFileInfo"
+  BEGIN
+    VALUE "Translation", 0x040c, 1200
+  END
+END

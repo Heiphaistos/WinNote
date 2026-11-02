@@ -18,7 +18,7 @@ pub fn status_height() -> i32 {
     scale(28)
 }
 
-fn blend(a: u32, b: u32, t: u32) -> u32 {
+pub fn blend(a: u32, b: u32, t: u32) -> u32 {
     let f = |s: u32| ((a >> s & 0xFF) * (100 - t) + (b >> s & 0xFF) * t) / 100;
     f(0) | f(8) << 8 | f(16) << 16
 }
@@ -27,6 +27,7 @@ fn blend(a: u32, b: u32, t: u32) -> u32 {
 enum Hit { None, Tab(usize), Close(usize), Plus }
 
 static mut HOVER: Hit = Hit::None;
+static mut DRAG: Option<usize> = None;
 
 fn tab_rects(width: i32, n: usize) -> (Vec<RECT>, RECT) {
     let pad = scale(8);
@@ -66,6 +67,9 @@ fn hit_test(h: HWND, x: i32, y: i32) -> Hit {
 
 fn text(dc: HDC, s: &str, r: &mut RECT, flags: u32) {
     let v: Vec<u16> = s.encode_utf16().collect();
+    if v.is_empty() {
+        return;
+    }
     unsafe { DrawTextW(dc, v.as_ptr(), v.len() as i32, r, flags | DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX) };
 }
 
@@ -174,7 +178,21 @@ pub unsafe extern "system" fn tabs_proc(h: HWND, m: u32, wp: WPARAM, lp: LPARAM)
             paint_buffered(h, paint_tabs);
             0
         }
+        WM_LBUTTONUP => {
+            DRAG = None;
+            ReleaseCapture();
+            0
+        }
         WM_MOUSEMOVE => {
+            if let (Some(d), true) = (DRAG, wp & 1 != 0) {
+                if let Hit::Tab(j) | Hit::Close(j) = hit_test(h, x, y) {
+                    if j != d {
+                        crate::cmds::move_tab(d, j);
+                        DRAG = Some(j);
+                    }
+                }
+                return 0;
+            }
             let n = hit_test(h, x, y);
             if n != HOVER {
                 HOVER = n;
@@ -190,10 +208,23 @@ pub unsafe extern "system" fn tabs_proc(h: HWND, m: u32, wp: WPARAM, lp: LPARAM)
         }
         WM_LBUTTONDOWN => {
             match hit_test(h, x, y) {
-                Hit::Tab(i) => crate::cmds::cmd_select(i),
+                Hit::Tab(i) => {
+                    crate::cmds::cmd_select(i);
+                    DRAG = Some(i);
+                    SetCapture(h);
+                }
                 Hit::Close(i) => crate::cmds::cmd_close(i),
                 Hit::Plus => crate::cmds::cmd_new(),
                 Hit::None => {}
+            }
+            0
+        }
+        WM_RBUTTONUP => {
+            if let Hit::Tab(i) | Hit::Close(i) = hit_test(h, x, y) {
+                crate::cmds::cmd_select(i);
+                let mut p = POINT { x, y };
+                ClientToScreen(h, &mut p);
+                crate::menu::tab_context(p.x, p.y);
             }
             0
         }
@@ -252,6 +283,10 @@ pub unsafe extern "system" fn status_proc(h: HWND, m: u32, wp: WPARAM, lp: LPARA
             paint_buffered(h, paint_status);
             0
         }
+        WM_LBUTTONUP => {
+            status_click(h, (lp & 0xFFFF) as i16 as i32);
+            0
+        }
         _ => DefWindowProcW(h, m, wp, lp),
     }
 }
@@ -259,4 +294,186 @@ pub unsafe extern "system" fn status_proc(h: HWND, m: u32, wp: WPARAM, lp: LPARA
 pub fn make_ui_font(dpi: u32) -> HFONT {
     let face = w("Segoe UI");
     unsafe { CreateFontW(-(9 * dpi as i32 / 72 + 1), 0, 0, 0, 400, 0, 0, 0, 1, 0, 0, 5, 0, face.as_ptr()) }
+}
+
+// ---------- Barre de titre style macOS (feux tricolores à gauche) ----------
+
+pub fn title_height() -> i32 {
+    if app().chrome == 1 { scale(40) } else { 0 }
+}
+
+fn light_rects() -> [RECT; 3] {
+    let d = scale(13);
+    let cy = title_height() / 2;
+    let mk = |i: i32| RECT { left: scale(16) + i * scale(22), top: cy - d / 2, right: scale(16) + i * scale(22) + d, bottom: cy - d / 2 + d };
+    [mk(0), mk(1), mk(2)]
+}
+
+fn menu_btn_rect(width: i32) -> RECT {
+    let h = title_height();
+    RECT { left: width - scale(46), top: scale(7), right: width - scale(12), bottom: h - scale(7) }
+}
+
+static mut TITLE_HOVER: i32 = -1; // 0..2 = feux, 3 = menu
+
+fn title_hit(h: HWND, x: i32, y: i32) -> i32 {
+    let mut rc: RECT = unsafe { zeroed() };
+    unsafe { GetClientRect(h, &mut rc) };
+    for (i, r) in light_rects().iter().enumerate() {
+        let pad = scale(5);
+        if inside(&RECT { left: r.left - pad, top: r.top - pad, right: r.right + pad, bottom: r.bottom + pad }, x, y) {
+            return i as i32;
+        }
+    }
+    if inside(&menu_btn_rect(rc.right), x, y) { 3 } else { -1 }
+}
+
+fn paint_title(dc: HDC, rc: &RECT) {
+    let a = app();
+    let t = &THEMES[a.theme];
+    let hover = unsafe { TITLE_HOVER };
+    let active = unsafe { GetForegroundWindow() } == a.hwnd;
+    unsafe {
+        fill(dc, rc, t.ui_bg);
+        let cols = [0x5F57FFu32, 0x2EBCFE, 0x40C828]; // BGR de #FF5F57, #FEBC2E, #28C840
+        let grey = blend(t.ui_bg, t.ui_fg, 22);
+        for (i, r) in light_rects().iter().enumerate() {
+            let col = if active || (0..3).contains(&hover) { cols[i] } else { grey };
+            let b = CreateSolidBrush(col);
+            let p = CreatePen(PS_SOLID, 1, blend(col, 0, 18));
+            let (ob, op) = (SelectObject(dc, b), SelectObject(dc, p));
+            Ellipse(dc, r.left, r.top, r.right + 1, r.bottom + 1);
+            SelectObject(dc, ob);
+            SelectObject(dc, op);
+            DeleteObject(b);
+            DeleteObject(p);
+            if (0..3).contains(&hover) {
+                let (cx, cy, d) = ((r.left + r.right) / 2, (r.top + r.bottom) / 2, scale(3));
+                let dark = 0x303030u32;
+                match i {
+                    0 => {
+                        line(dc, dark, 1, cx - d, cy - d, cx + d + 1, cy + d + 1);
+                        line(dc, dark, 1, cx - d, cy + d, cx + d + 1, cy - d - 1);
+                    }
+                    1 => line(dc, dark, 1, cx - d, cy, cx + d + 1, cy),
+                    _ => {
+                        line(dc, dark, 1, cx - d, cy, cx + d + 1, cy);
+                        line(dc, dark, 1, cx, cy - d, cx, cy + d + 1);
+                    }
+                }
+            }
+        }
+        let d = &a.docs[a.cur];
+        let name = format!("{}{}", if d.dirty { "• " } else { "" }, d.title());
+        SetTextColor(dc, blend(t.ui_fg, t.ui_bg, 20));
+        let mut r = RECT { left: scale(110), right: rc.right - scale(60), ..*rc };
+        text(dc, &name, &mut r, DT_CENTER | DT_END_ELLIPSIS);
+        let m = menu_btn_rect(rc.right);
+        if hover == 3 {
+            round_fill(dc, &m, blend(t.ui_bg, t.ui_fg, 12), scale(8));
+        }
+        SetTextColor(dc, t.ui_fg);
+        let mut mr = m;
+        text(dc, "☰", &mut mr, DT_CENTER);
+        line(dc, blend(t.ui_bg, t.ui_fg, 12), 1, 0, rc.bottom - 1, rc.right, rc.bottom - 1);
+    }
+}
+
+pub unsafe extern "system" fn title_proc(h: HWND, m: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
+    let (x, y) = ((lp & 0xFFFF) as i16 as i32, ((lp >> 16) & 0xFFFF) as i16 as i32);
+    match m {
+        WM_ERASEBKGND => 1,
+        WM_PAINT => {
+            paint_buffered(h, paint_title);
+            0
+        }
+        WM_NCHITTEST => {
+            // hors boutons : la fenêtre principale gère (déplacement par glisser)
+            let mut p = POINT { x: (lp & 0xFFFF) as i16 as i32, y: ((lp >> 16) & 0xFFFF) as i16 as i32 };
+            ScreenToClient(h, &mut p);
+            if title_hit(h, p.x, p.y) >= 0 { HTCLIENT as LRESULT } else { HTTRANSPARENT as LRESULT }
+        }
+        WM_MOUSEMOVE => {
+            let n = title_hit(h, x, y);
+            if n != TITLE_HOVER {
+                TITLE_HOVER = n;
+                InvalidateRect(h, std::ptr::null(), 0);
+            }
+            track_leave(h);
+            0
+        }
+        0x02A3 => {
+            TITLE_HOVER = -1;
+            InvalidateRect(h, std::ptr::null(), 0);
+            0
+        }
+        WM_LBUTTONUP => {
+            let main = app().hwnd;
+            match title_hit(h, x, y) {
+                0 => drop(PostMessageW(main, WM_CLOSE, 0, 0)),
+                1 => drop(ShowWindow(main, SW_MINIMIZE)),
+                2 => drop(ShowWindow(main, if IsZoomed(main) != 0 { SW_RESTORE } else { SW_MAXIMIZE })),
+                3 => {
+                    let mut rc: RECT = zeroed();
+                    GetClientRect(h, &mut rc);
+                    let mut p = POINT { x: rc.right - scale(200), y: rc.bottom };
+                    ClientToScreen(h, &mut p);
+                    crate::menu::popup_at(app().menus.popup, p.x, p.y);
+                }
+                _ => {}
+            }
+            0
+        }
+        _ => DefWindowProcW(h, m, wp, lp),
+    }
+}
+
+/// Rectangles des segments de droite (caractères, zoom, eol, encodage, langage).
+fn status_segments(h: HWND) -> Vec<RECT> {
+    let a = app();
+    let mut rc: RECT = unsafe { zeroed() };
+    unsafe { GetClientRect(h, &mut rc) };
+    let d = &a.docs[a.cur];
+    let eol = match crate::sci::send(a.sci, crate::sci::GETEOLMODE, 0, 0) { 0 => "Windows (CRLF)", 1 => "Macintosh (CR)", _ => "Unix (LF)" };
+    let labels = ["999 999 caractères".to_string(), "100%".to_string(), eol.to_string(), d.enc.name().to_string(), LANGS[d.lang].name.to_string()];
+    let dc = unsafe { GetDC(h) };
+    let old = unsafe { SelectObject(dc, a.ui_font) };
+    let mut x = rc.right - scale(16);
+    let mut out = vec![RECT { left: 0, top: 0, right: 0, bottom: 0 }; 5];
+    for (i, l) in labels.iter().enumerate().rev() {
+        let v: Vec<u16> = l.encode_utf16().collect();
+        let mut sz: SIZE = unsafe { zeroed() };
+        unsafe { GetTextExtentPoint32W(dc, v.as_ptr(), v.len() as i32, &mut sz) };
+        let wdt = if i == 0 { 0 } else { sz.cx };
+        out[i] = RECT { left: x - wdt - scale(6), top: 0, right: x + scale(6), bottom: rc.bottom };
+        x -= wdt + scale(14);
+    }
+    unsafe {
+        SelectObject(dc, old);
+        ReleaseDC(h, dc);
+    }
+    out
+}
+
+/// Clic sur la barre d'état : ouvre le menu du segment (fins de ligne, encodage, langage).
+pub fn status_click(h: HWND, x: i32) {
+    let a = app();
+    for (i, r) in status_segments(h).iter().enumerate() {
+        if x >= r.left && x < r.right {
+            let menu = match i {
+                2 => a.menus.eol,
+                3 => a.menus.enc,
+                4 => a.menus.lang,
+                _ => return,
+            };
+            let mut p = POINT { x: r.left, y: 0 };
+            unsafe {
+                ClientToScreen(h, &mut p);
+                let mut wr: RECT = zeroed();
+                GetWindowRect(h, &mut wr);
+                crate::menu::popup_at(menu, p.x, wr.top - scale(20));
+            }
+            return;
+        }
+    }
 }

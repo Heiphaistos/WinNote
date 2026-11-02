@@ -21,6 +21,7 @@ pub struct Doc {
     pub first: isize,
     pub untitled: u32,
     pub dirty: bool,
+    pub mtime: Option<std::time::SystemTime>,
 }
 
 impl Doc {

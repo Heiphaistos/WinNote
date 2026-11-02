@@ -23,6 +23,8 @@ fn main() {
     for l in ["user32", "gdi32", "imm32", "ole32", "oleaut32", "msimg32", "d2d1", "dwrite", "uuid", "advapi32", "shell32"] {
         println!("cargo:rustc-link-lib={l}");
     }
+    embed_resource::compile("winnote.rc", embed_resource::NONE).manifest_optional().unwrap();
+    println!("cargo:rerun-if-changed=winnote.rc");
     // Manifeste : PerMonitorV2, contrôles v6, UTF-8
     let m = Path::new("winnote.manifest").canonicalize().unwrap();
     println!("cargo:rustc-link-arg=/MANIFEST:EMBED");

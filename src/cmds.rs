@@ -1,162 +1,22 @@
-//! Commandes : menus, documents (onglets), fichiers, recherche, apparence.
+//! Documents (onglets), fichiers, apparence et répartition des commandes.
 use crate::doc::{self, Doc, Enc};
+use crate::ids::*;
 use crate::lang::{self, LANGS};
+use crate::palette::{self, Mode};
 use crate::sci::{self, send};
-use crate::theme::{LAYOUTS, THEMES};
-use crate::{app, cstr, relayout, w, App};
+use crate::theme::{Cls, LAYOUTS, THEMES};
+use crate::{app, cstr, relayout, textops, w, App};
 use std::ptr::{null, null_mut};
 use windows_sys::Win32::{
     Foundation::*,
     Graphics::Dwm::DwmSetWindowAttribute,
-    Graphics::Gdi::{InvalidateRect, LOGFONTW},
-    System::{LibraryLoader::*, SystemInformation::GetLocalTime},
-    UI::{Controls::Dialogs::*, Input::KeyboardAndMouse::*, WindowsAndMessaging::*},
+    Graphics::Gdi::{GetMonitorInfoW, InvalidateRect, MonitorFromWindow, LOGFONTW, MONITORINFO, MONITOR_DEFAULTTONEAREST},
+    System::{DataExchange::*, LibraryLoader::*, Memory::*, SystemInformation::GetLocalTime},
+    UI::{Controls::Dialogs::*, Input::KeyboardAndMouse::SetFocus, Shell::*, WindowsAndMessaging::*},
 };
-
-// Identifiants de commandes
-const NEW: usize = 100;
-const OPEN: usize = 101;
-const SAVE: usize = 102;
-const SAVEAS: usize = 103;
-const SAVEALL: usize = 104;
-const CLOSE: usize = 105;
-const EXIT: usize = 106;
-const UNDO: usize = 110;
-const REDO: usize = 111;
-const CUT: usize = 112;
-const COPY: usize = 113;
-const PASTE: usize = 114;
-const DEL: usize = 115;
-const SELALL: usize = 116;
-const FIND: usize = 117;
-const FINDNEXT: usize = 118;
-const FINDPREV: usize = 119;
-const REPLACE: usize = 120;
-const DATETIME: usize = 121;
-const DUPLINE: usize = 122;
-const DELLINE: usize = 123;
-const UPPER: usize = 124;
-const LOWER: usize = 125;
-const WRAP: usize = 130;
-const FONT: usize = 131;
-const EOL: usize = 132; // 132..134 : CRLF, CR, LF
-const ZOOMIN: usize = 140;
-const ZOOMOUT: usize = 141;
-const ZOOMRESET: usize = 142;
-const STATUSBAR: usize = 143;
-const LINES: usize = 144;
-const WS: usize = 145;
-const TABNEXT: usize = 150;
-const TABPREV: usize = 151;
-const ENC: usize = 200;
-const LANG: usize = 300;
-const THEME: usize = 400;
-const LAYOUT: usize = 500;
-const ABOUT: usize = 600;
 
 pub fn msg_box(s: &str) {
     unsafe { MessageBoxW(app().hwnd, w(s).as_ptr(), w("WinNote").as_ptr(), MB_OK | MB_ICONINFORMATION) };
-}
-
-fn add(m: HMENU, id: usize, t: &str) {
-    unsafe { AppendMenuW(m, MF_STRING, id, w(t).as_ptr()) };
-}
-fn sep(m: HMENU) {
-    unsafe { AppendMenuW(m, MF_SEPARATOR, 0, null()) };
-}
-fn sub(parent: HMENU, name: &str) -> HMENU {
-    unsafe {
-        let m = CreatePopupMenu();
-        AppendMenuW(parent, MF_POPUP, m as usize, w(name).as_ptr());
-        m
-    }
-}
-
-pub fn build_menu() -> HMENU {
-    unsafe {
-        let bar = CreateMenu();
-        let f = sub(bar, "Fichier");
-        add(f, NEW, "Nouvel onglet\tCtrl+N");
-        add(f, OPEN, "Ouvrir...\tCtrl+O");
-        sep(f);
-        add(f, SAVE, "Enregistrer\tCtrl+S");
-        add(f, SAVEAS, "Enregistrer sous...\tCtrl+Maj+S");
-        add(f, SAVEALL, "Tout enregistrer\tCtrl+Alt+S");
-        sep(f);
-        add(f, CLOSE, "Fermer l'onglet\tCtrl+W");
-        add(f, EXIT, "Quitter");
-        let e = sub(bar, "Édition");
-        add(e, UNDO, "Annuler\tCtrl+Z");
-        add(e, REDO, "Rétablir\tCtrl+Y");
-        sep(e);
-        add(e, CUT, "Couper\tCtrl+X");
-        add(e, COPY, "Copier\tCtrl+C");
-        add(e, PASTE, "Coller\tCtrl+V");
-        add(e, DEL, "Supprimer\tSuppr");
-        sep(e);
-        add(e, FIND, "Rechercher...\tCtrl+F");
-        add(e, FINDNEXT, "Suivant\tF3");
-        add(e, FINDPREV, "Précédent\tMaj+F3");
-        add(e, REPLACE, "Remplacer...\tCtrl+H");
-        sep(e);
-        add(e, DUPLINE, "Dupliquer la ligne\tCtrl+D");
-        add(e, DELLINE, "Supprimer la ligne\tCtrl+Maj+K");
-        add(e, UPPER, "EN MAJUSCULES\tCtrl+Maj+U");
-        add(e, LOWER, "en minuscules\tCtrl+U");
-        add(e, DATETIME, "Heure et date\tF5");
-        add(e, SELALL, "Tout sélectionner\tCtrl+A");
-        let fm = sub(bar, "Format");
-        add(fm, WRAP, "Retour automatique à la ligne");
-        add(fm, FONT, "Police...");
-        let eol = sub(fm, "Fins de ligne");
-        add(eol, EOL, "Windows (CRLF)");
-        add(eol, EOL + 1, "Macintosh (CR)");
-        add(eol, EOL + 2, "Unix (LF)");
-        let v = sub(bar, "Affichage");
-        add(v, ZOOMIN, "Zoom avant\tCtrl++");
-        add(v, ZOOMOUT, "Zoom arrière\tCtrl+-");
-        add(v, ZOOMRESET, "Zoom par défaut\tCtrl+0");
-        sep(v);
-        add(v, LINES, "Numéros de ligne");
-        add(v, WS, "Afficher les espaces et tabulations");
-        add(v, STATUSBAR, "Barre d'état");
-        sep(v);
-        add(v, TABNEXT, "Onglet suivant\tCtrl+Tab");
-        add(v, TABPREV, "Onglet précédent\tCtrl+Maj+Tab");
-        let th = sub(bar, "Thème");
-        for (i, t) in THEMES.iter().enumerate() {
-            add(th, THEME + i, t.name);
-        }
-        sep(th);
-        for (i, l) in LAYOUTS.iter().enumerate() {
-            add(th, LAYOUT + i, &format!("Disposition : {}", l.name));
-        }
-        let lg = sub(bar, "Langage");
-        for (i, l) in LANGS.iter().enumerate() {
-            add(lg, LANG + i, l.name);
-        }
-        let en = sub(bar, "Encodage");
-        for (i, e) in Enc::ALL.iter().enumerate() {
-            add(en, ENC + i, e.name());
-        }
-        let h = sub(bar, "?");
-        add(h, ABOUT, "À propos de WinNote");
-        bar
-    }
-}
-
-pub fn build_accel() -> HACCEL {
-    let c = (FVIRTKEY | FCONTROL) as u8;
-    let cs = c | FSHIFT as u8;
-    let k = |virt: u8, key: u16, cmd: usize| ACCEL { fVirt: virt, key, cmd: cmd as u16 };
-    let t = [
-        k(c, b'N' as u16, NEW), k(c, b'T' as u16, NEW), k(c, b'O' as u16, OPEN), k(c, b'S' as u16, SAVE), k(cs, b'S' as u16, SAVEAS),
-        k(c | FALT as u8, b'S' as u16, SAVEALL), k(c, b'W' as u16, CLOSE), k(c, b'F' as u16, FIND), k(c, b'H' as u16, REPLACE),
-        k(FVIRTKEY as u8, VK_F3 as u16, FINDNEXT), k((FVIRTKEY | FSHIFT) as u8, VK_F3 as u16, FINDPREV), k(FVIRTKEY as u8, VK_F5 as u16, DATETIME),
-        k(c, b'D' as u16, DUPLINE), k(cs, b'K' as u16, DELLINE), k(cs, b'U' as u16, UPPER), k(c, b'U' as u16, LOWER),
-        k(c, VK_TAB as u16, TABNEXT), k(cs, VK_TAB as u16, TABPREV), k(c, 0xBB, ZOOMIN), k(c, 0xBD, ZOOMOUT), k(c, b'0' as u16, ZOOMRESET),
-    ];
-    unsafe { CreateAcceleratorTableW(t.as_ptr(), t.len() as i32) }
 }
 
 // ---------- Apparence ----------
@@ -171,6 +31,9 @@ fn set_lexer(a: &App, lang: usize) {
             send(a.sci, sci::SETILEXER, 0, p as isize);
             for (i, k) in l.kw.iter().enumerate() {
                 send(a.sci, sci::SETKEYWORDS, i, cstr(k).as_ptr() as isize);
+            }
+            for (k, v) in [("fold", "1"), ("fold.compact", "0"), ("fold.html", "1"), ("fold.comment", "1"), ("fold.preprocessor", "1")] {
+                send(a.sci, sci::SETPROPERTY, cstr(k).as_ptr() as usize, cstr(v).as_ptr() as isize);
             }
         }
     }
@@ -197,8 +60,8 @@ fn style_editor(a: &App) {
     if let Some(d) = a.docs.get(a.cur) {
         for &(st, cls) in LANGS[d.lang].map {
             send(s, sci::STYLESETFORE, st as usize, t.color(cls) as isize);
-            send(s, sci::STYLESETBOLD, st as usize, matches!(cls, crate::theme::Cls::Head | crate::theme::Cls::Strong) as isize);
-            send(s, sci::STYLESETITALIC, st as usize, matches!(cls, crate::theme::Cls::Emph) as isize);
+            send(s, sci::STYLESETBOLD, st as usize, matches!(cls, Cls::Head | Cls::Strong) as isize);
+            send(s, sci::STYLESETITALIC, st as usize, matches!(cls, Cls::Emph) as isize);
         }
     }
     send(s, sci::SETMARGINLEFT, 0, sc(a.margin));
@@ -206,12 +69,29 @@ fn style_editor(a: &App) {
     send(s, sci::SETMARGINTYPE, 0, 1);
     let w0 = if a.lines { send(s, sci::TEXTWIDTH, sci::STYLE_LINENUM, cstr("_99999").as_ptr() as isize) } else { 0 };
     send(s, sci::SETMARGINW, 0, w0);
-    for m in 1..3 {
-        send(s, sci::SETMARGINW, m, 0);
+    // marge 1 : signets ; marge 2 : repli
+    send(s, sci::SETMARGINTYPE, 1, 0);
+    send(s, sci::SETMARGINMASK, 1, 2);
+    send(s, sci::SETMARGINW, 1, if a.lines || a.fold { sc(14) } else { 0 });
+    send(s, sci::MARKERDEFINE, 1, 0); // cercle
+    send(s, sci::MARKERSETFORE, 1, t.accent as isize);
+    send(s, sci::MARKERSETBACK, 1, t.accent as isize);
+    send(s, sci::SETMARGINTYPE, 2, 0);
+    send(s, sci::SETMARGINMASK, 2, 0xFE00_0000u32 as isize);
+    send(s, sci::SETMARGINSENSITIVE, 2, 1);
+    send(s, sci::SETMARGINW, 2, if a.fold { sc(14) } else { 0 });
+    for (m, sym) in [(31usize, 6isize), (30, 2), (29, 5), (28, 5), (25, 5), (26, 5), (27, 5)] {
+        send(s, sci::MARKERDEFINE, m, sym);
+        send(s, sci::MARKERSETFORE, m, t.gutter as isize);
+        send(s, sci::MARKERSETBACK, m, t.gutter as isize);
     }
+    send(s, sci::SETAUTOFOLD, 7, 0);
     send(s, sci::SETWRAP, a.wrap as usize, 0);
     send(s, sci::SETVIEWWS, a.ws as usize, 0);
     send(s, sci::SETINDGUIDES, if a.lines { 3 } else { 0 }, 0);
+    send(s, sci::SETEXTRAASCENT, (sc(a.spacing) / 2) as usize, 0);
+    send(s, sci::SETEXTRADESCENT, (sc(a.spacing) / 2) as usize, 0);
+    send(s, sci::USEPOPUP, 0, 0);
 }
 
 fn dwm_and_menus(a: &App) {
@@ -220,11 +100,10 @@ fn dwm_and_menus(a: &App) {
         let set = |attr: u32, v: u32| {
             DwmSetWindowAttribute(a.hwnd, attr, &v as *const u32 as *const _, 4);
         };
-        set(20, t.dark as u32); // mode sombre de la barre de titre
-        set(35, t.ui_bg); // couleur de la barre de titre (Windows 11)
+        set(20, t.dark as u32);
+        set(35, t.ui_bg);
         set(36, t.ui_fg);
         set(34, t.ui_bg);
-        // menus contextuels sombres/clairs (ordinaux uxtheme 135 SetPreferredAppMode, 136 FlushMenuThemes)
         let ux = LoadLibraryW(w("uxtheme.dll").as_ptr());
         if !ux.is_null() {
             if let Some(f) = GetProcAddress(ux, 135usize as *const u8) {
@@ -243,8 +122,10 @@ pub fn apply_all(a: &mut App) {
     if a.docs.is_empty() {
         return;
     }
-    send(a.sci, sci::SETTECH, 1, 0);
-    send(a.sci, sci::SETBUFDRAW, 0, 0);
+    for c in [a.sci, a.prev] {
+        send(c, sci::SETTECH, 1, 0);
+        send(c, sci::SETBUFDRAW, 0, 0);
+    }
     send(a.sci, sci::SETMULTISEL, 1, 0);
     send(a.sci, sci::SETADDSELTYPING, 1, 0);
     send(a.sci, sci::SETMULTIPASTE, 1, 0);
@@ -254,6 +135,14 @@ pub fn apply_all(a: &mut App) {
     send(a.sci, sci::SETSCROLLWTRACK, 1, 0);
     style_editor(a);
     dwm_and_menus(a);
+    let sb = w(if THEMES[a.theme].dark { "DarkMode_Explorer" } else { "Explorer" });
+    for c in [a.sci, a.prev] {
+        unsafe { windows_sys::Win32::UI::Controls::SetWindowTheme(c, sb.as_ptr(), null()) };
+    }
+    crate::findbar::recolor();
+    crate::sidebar::recolor();
+    crate::mdpreview::restyle();
+    crate::mdpreview::update();
     refresh();
 }
 
@@ -266,25 +155,110 @@ pub fn refresh() {
     unsafe {
         let title = format!("{}{} - WinNote", if d.dirty { "*" } else { "" }, d.title());
         SetWindowTextW(a.hwnd, w(&title).as_ptr());
-        InvalidateRect(a.tabs, null(), 0);
-        InvalidateRect(a.status, null(), 0);
-        let chk = |id: usize, on: bool| {
-            CheckMenuItem(a.menu, id as u32, MF_BYCOMMAND | if on { MF_CHECKED } else { MF_UNCHECKED });
-        };
-        chk(WRAP, a.wrap);
-        chk(LINES, a.lines);
-        chk(WS, a.ws);
-        chk(STATUSBAR, a.status_vis);
-        CheckMenuRadioItem(a.menu, THEME as u32, (THEME + THEMES.len() - 1) as u32, (THEME + a.theme) as u32, MF_BYCOMMAND);
-        CheckMenuRadioItem(a.menu, LANG as u32, (LANG + LANGS.len() - 1) as u32, (LANG + d.lang) as u32, MF_BYCOMMAND);
-        let ei = Enc::ALL.iter().position(|&e| e == d.enc).unwrap_or(0);
-        CheckMenuRadioItem(a.menu, ENC as u32, (ENC + 4) as u32, (ENC + ei) as u32, MF_BYCOMMAND);
-        let em = send(a.sci, sci::GETEOLMODE, 0, 0) as usize;
-        CheckMenuRadioItem(a.menu, EOL as u32, (EOL + 2) as u32, (EOL + em) as u32, MF_BYCOMMAND);
+        for h in [a.tabs, a.status, a.title] {
+            InvalidateRect(h, null(), 0);
+        }
+        for m in [a.menus.bar, a.menus.popup] {
+            let chk = |id: usize, on: bool| {
+                CheckMenuItem(m, id as u32, MF_BYCOMMAND | if on { MF_CHECKED } else { MF_UNCHECKED });
+            };
+            chk(WRAP, a.wrap);
+            chk(LINES, a.lines);
+            chk(WS, a.ws);
+            chk(STATUSBAR, a.status_vis);
+            chk(SIDEBAR, a.sidebar_vis && a.side_mode == 0);
+            chk(OUTLINE, a.sidebar_vis && a.side_mode == 1);
+            chk(PREVIEW, a.preview);
+            chk(FOLDMARGIN, a.fold);
+            chk(ZEN, a.zen);
+            chk(TOPMOST, a.topmost);
+            chk(READONLY, send(a.sci, sci::GETREADONLY, 0, 0) != 0);
+            chk(AUTOUPDATE, a.auto_update);
+            CheckMenuRadioItem(m, THEME as u32, (THEME + THEMES.len() - 1) as u32, (THEME + a.theme) as u32, MF_BYCOMMAND);
+            CheckMenuRadioItem(m, LANG as u32, (LANG + LANGS.len() - 1) as u32, (LANG + d.lang) as u32, MF_BYCOMMAND);
+            let ei = Enc::ALL.iter().position(|&e| e == d.enc).unwrap_or(0);
+            CheckMenuRadioItem(m, ENC as u32, (ENC + 4) as u32, (ENC + ei) as u32, MF_BYCOMMAND);
+            let em = send(a.sci, sci::GETEOLMODE, 0, 0) as usize;
+            CheckMenuRadioItem(m, EOL as u32, (EOL + 2) as u32, (EOL + em) as u32, MF_BYCOMMAND);
+            CheckMenuRadioItem(m, CHROME_WIN as u32, CHROME_MAC as u32, (CHROME_WIN + a.chrome as usize) as u32, MF_BYCOMMAND);
+            CheckMenuRadioItem(m, LAYOUT as u32, (LAYOUT + LAYOUTS.len() - 1) as u32, (LAYOUT + a.layout) as u32, MF_BYCOMMAND);
+        }
     }
 }
 
+/// Style de fenêtre : 0 = Windows (barre native), 1 = macOS (boutons à gauche, menu dans ☰).
+pub fn apply_chrome(a: &mut App) {
+    unsafe {
+        if a.chrome == 1 {
+            SetMenu(a.hwnd, null_mut());
+            ShowWindow(a.title, SW_SHOW);
+            let m = [0i32, 0, 1, 0]; // MARGINS{left,right,top,bottom} : 1 px pour garder l'ombre
+            windows_sys::Win32::Graphics::Dwm::DwmExtendFrameIntoClientArea(a.hwnd, m.as_ptr() as *const _);
+        } else {
+            ShowWindow(a.title, SW_HIDE);
+            SetMenu(a.hwnd, a.menus.bar);
+        }
+        SetWindowPos(a.hwnd, null_mut(), 0, 0, 0, 0, SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+    }
+    relayout();
+    refresh();
+}
+
+pub fn apply_layout(a: &mut App, i: usize) {
+    let l = &LAYOUTS[i];
+    (a.layout, a.font, a.size, a.wrap, a.lines, a.margin, a.fold, a.spacing) = (i, l.font.into(), l.size, l.wrap, l.lines, l.margin, l.fold, l.spacing);
+    if let Some(t) = l.theme {
+        a.theme = t;
+    }
+    a.sidebar_vis = l.sidebar;
+    a.preview = l.preview;
+    if l.sidebar && a.root.is_none() {
+        a.side_mode = 1;
+    }
+    if a.chrome != l.chrome {
+        a.chrome = l.chrome;
+        apply_chrome(a);
+    }
+    send(a.sci, sci::SETZOOM, 0, 0);
+    relayout();
+    if a.sidebar_vis {
+        if a.side_mode == 1 { crate::sidebar::show_outline() } else { crate::sidebar::show_files() }
+    }
+    apply_all(a);
+}
+
+pub fn toggle_zen(a: &mut App) {
+    unsafe {
+        if !a.zen {
+            a.zen_style = GetWindowLongPtrW(a.hwnd, GWL_STYLE);
+            GetWindowRect(a.hwnd, &mut a.zen_rect);
+            a.zen = true;
+            SetWindowLongPtrW(a.hwnd, GWL_STYLE, a.zen_style & !(WS_OVERLAPPEDWINDOW as isize));
+            let mut mi: MONITORINFO = std::mem::zeroed();
+            mi.cbSize = std::mem::size_of::<MONITORINFO>() as u32;
+            GetMonitorInfoW(MonitorFromWindow(a.hwnd, MONITOR_DEFAULTTONEAREST), &mut mi);
+            let r = mi.rcMonitor;
+            SetMenu(a.hwnd, null_mut());
+            SetWindowPos(a.hwnd, HWND_TOP, r.left, r.top, r.right - r.left, r.bottom - r.top, SWP_FRAMECHANGED | SWP_SHOWWINDOW);
+        } else {
+            a.zen = false;
+            SetWindowLongPtrW(a.hwnd, GWL_STYLE, a.zen_style);
+            if a.chrome == 0 {
+                SetMenu(a.hwnd, a.menus.bar);
+            }
+            let r = a.zen_rect;
+            SetWindowPos(a.hwnd, null_mut(), r.left, r.top, r.right - r.left, r.bottom - r.top, SWP_FRAMECHANGED | SWP_NOZORDER);
+        }
+    }
+    relayout();
+    refresh();
+}
+
 // ---------- Documents ----------
+
+pub fn save_view_state_pub(a: &mut App) {
+    save_view_state(a);
+}
 
 fn save_view_state(a: &mut App) {
     if let Some(d) = a.docs.get_mut(a.cur) {
@@ -304,22 +278,33 @@ pub fn switch_to(a: &mut App, i: usize) {
     send(a.sci, sci::SETSEL, d.caret as usize, d.caret);
     send(a.sci, sci::SETFIRSTVISIBLE, d.first as usize, 0);
     style_editor(a);
+    crate::findbar::mark_all();
+    crate::sidebar::refresh();
+    crate::mdpreview::update();
     refresh();
     unsafe { SetFocus(a.sci) };
 }
 
-fn push_doc(a: &mut App, path: Option<String>, text: Option<(Vec<u8>, Enc)>) {
+fn mtime(p: &str) -> Option<std::time::SystemTime> {
+    std::fs::metadata(p).and_then(|m| m.modified()).ok()
+}
+
+pub fn push_doc_full(a: &mut App, path: Option<String>, text: Option<(Vec<u8>, Enc)>, dirty: bool, untitled_in: u32) {
     save_view_state(a);
     let ptr = send(a.sci, sci::CREATEDOC, 0, 0);
     let (lang, untitled) = match &path {
         Some(p) => (lang::by_path(p), 0),
         None => {
-            a.untitled += 1;
-            (0, a.untitled)
+            a.untitled = a.untitled.max(untitled_in);
+            if untitled_in == 0 {
+                a.untitled += 1;
+            }
+            (0, if untitled_in == 0 { a.untitled } else { untitled_in })
         }
     };
     let enc = text.as_ref().map_or(Enc::Utf8, |t| t.1);
-    a.docs.push(Doc { ptr, path, enc, lang, caret: 0, first: 0, untitled, dirty: false });
+    let mt = path.as_deref().and_then(mtime);
+    a.docs.push(Doc { ptr, path, enc, lang, caret: 0, first: 0, untitled, dirty, mtime: mt });
     a.cur = a.docs.len() - 1;
     send(a.sci, sci::SETDOCPTR, 0, ptr);
     send(a.sci, sci::SETCODEPAGE, 65001, 0);
@@ -327,23 +312,40 @@ fn push_doc(a: &mut App, path: Option<String>, text: Option<(Vec<u8>, Enc)>) {
         send(a.sci, sci::ADDTEXT, t.len(), t.as_ptr() as isize);
         send(a.sci, sci::SETEOLMODE, doc::detect_eol(&t), 0);
         send(a.sci, sci::EMPTYUNDO, 0, 0);
-        send(a.sci, sci::SETSAVEPOINT, 0, 0);
+        if !dirty {
+            send(a.sci, sci::SETSAVEPOINT, 0, 0);
+        }
         send(a.sci, sci::SETSEL, 0, 0);
     }
+    a.docs[a.cur].dirty = dirty;
     set_lexer(a, lang);
     style_editor(a);
+    crate::findbar::mark_all();
+    crate::sidebar::refresh();
+    crate::mdpreview::update();
     refresh();
     unsafe { SetFocus(a.sci) };
 }
 
 pub fn new_doc(a: &mut App) {
-    push_doc(a, None, None);
+    push_doc_full(a, None, None, false, 0);
 }
 pub fn cmd_new() {
     new_doc(app());
 }
 pub fn cmd_select(i: usize) {
     switch_to(app(), i);
+}
+
+pub fn move_tab(from: usize, to: usize) {
+    let a = app();
+    if from >= a.docs.len() || to >= a.docs.len() {
+        return;
+    }
+    let d = a.docs.remove(from);
+    a.docs.insert(to, d);
+    a.cur = to;
+    refresh();
 }
 
 pub fn open_path(p: &str) {
@@ -356,7 +358,8 @@ pub fn open_path(p: &str) {
         Ok(b) => {
             let (t, e) = doc::decode(&b);
             let reuse = a.docs.len() == 1 && a.docs[0].path.is_none() && !a.docs[0].dirty && send(a.sci, sci::GETLENGTH, 0, 0) == 0;
-            push_doc(a, Some(p.to_string()), Some((t, e)));
+            push_doc_full(a, Some(p.to_string()), Some((t, e)), false, 0);
+            crate::session::add_recent(p);
             if reuse {
                 drop_doc(a, 0);
             }
@@ -365,9 +368,20 @@ pub fn open_path(p: &str) {
     }
 }
 
-/// Retire le document i (sans demande de confirmation).
+/// Ouvre un fichier, ou crée un onglet nommé s'il n'existe pas encore (liens [[note]]).
+pub fn open_or_create(p: &str) {
+    if std::path::Path::new(p).exists() {
+        open_path(p);
+    } else {
+        push_doc_full(app(), Some(p.to_string()), Some((Vec::new(), Enc::Utf8)), true, 0);
+    }
+}
+
 fn drop_doc(a: &mut App, i: usize) {
     let ptr = a.docs[i].ptr;
+    if let Some(p) = a.docs[i].path.clone() {
+        a.closed.push(p);
+    }
     if a.docs.len() == 1 {
         new_doc(a);
     }
@@ -383,12 +397,9 @@ fn drop_doc(a: &mut App, i: usize) {
 }
 
 fn ask_save(name: &str) -> i32 {
-    unsafe {
-        MessageBoxW(app().hwnd, w(&format!("Voulez-vous enregistrer les modifications de « {name} » ?")).as_ptr(), w("WinNote").as_ptr(), MB_YESNOCANCEL | MB_ICONQUESTION)
-    }
+    unsafe { MessageBoxW(app().hwnd, w(&format!("Voulez-vous enregistrer les modifications de « {name} » ?")).as_ptr(), w("WinNote").as_ptr(), MB_YESNOCANCEL | MB_ICONQUESTION) }
 }
 
-/// Renvoie true si le document peut être fermé.
 fn confirm_close(a: &mut App, i: usize) -> bool {
     if !a.docs[i].dirty {
         return true;
@@ -408,9 +419,19 @@ pub fn cmd_close(i: usize) {
     }
 }
 
-pub fn confirm_close_all() -> bool {
+fn close_many(keep: Option<usize>) {
     let a = app();
-    (0..a.docs.len()).all(|i| confirm_close(a, i))
+    let keep_ptr = keep.map(|k| a.docs[k].ptr);
+    loop {
+        let Some(i) = a.docs.iter().position(|d| Some(d.ptr) != keep_ptr) else { break };
+        if keep.is_none() && a.docs.len() == 1 && a.docs[0].path.is_none() && !a.docs[0].dirty {
+            break;
+        }
+        if !confirm_close(a, i) {
+            break;
+        }
+        drop_doc(a, i);
+    }
 }
 
 fn get_text(a: &App) -> Vec<u8> {
@@ -419,6 +440,18 @@ fn get_text(a: &App) -> Vec<u8> {
     send(a.sci, sci::GETTEXT, n + 1, b.as_mut_ptr() as isize);
     b.truncate(n);
     b
+}
+
+/// Texte UTF-8 d'un document quelconque (utilisé par la session).
+pub fn text_of_doc(a: &mut App, i: usize) -> Vec<u8> {
+    if i == a.cur {
+        return get_text(a);
+    }
+    let cur_ptr = a.docs[a.cur].ptr;
+    send(a.sci, sci::SETDOCPTR, 0, a.docs[i].ptr);
+    let t = get_text(a);
+    send(a.sci, sci::SETDOCPTR, 0, cur_ptr);
+    t
 }
 
 fn file_dialog(save: bool, name: &str) -> Vec<String> {
@@ -447,6 +480,22 @@ fn file_dialog(save: bool, name: &str) -> Vec<String> {
     }
 }
 
+fn pick_folder() -> Option<String> {
+    unsafe {
+        let title = w("Choisir un dossier");
+        let mut name = vec![0u16; 260];
+        let bi = BROWSEINFOW { hwndOwner: app().hwnd, pidlRoot: null_mut(), pszDisplayName: name.as_mut_ptr(), lpszTitle: title.as_ptr(), ulFlags: 0x41, lpfn: None, lParam: 0, iImage: 0 };
+        let pidl = SHBrowseForFolderW(&bi);
+        if pidl.is_null() {
+            return None;
+        }
+        let mut path = vec![0u16; 1024];
+        let ok = SHGetPathFromIDListW(pidl, path.as_mut_ptr()) != 0;
+        windows_sys::Win32::System::Com::CoTaskMemFree(pidl as *const _);
+        ok.then(|| String::from_utf16_lossy(&path[..path.iter().position(|&c| c == 0).unwrap_or(0)]))
+    }
+}
+
 pub fn save_doc(a: &mut App, i: usize, as_new: bool) -> bool {
     if a.cur != i {
         switch_to(a, i);
@@ -465,134 +514,75 @@ pub fn save_doc(a: &mut App, i: usize, as_new: bool) -> bool {
     }
     send(a.sci, sci::SETSAVEPOINT, 0, 0);
     let d = &mut a.docs[i];
+    d.mtime = mtime(&path);
     if d.path.as_deref() != Some(&path) {
         d.path = Some(path.clone());
         d.lang = lang::by_path(&path);
         set_lexer(a, a.docs[i].lang);
         style_editor(a);
+        crate::session::add_recent(&path);
     }
     a.docs[i].dirty = false;
     refresh();
     true
 }
 
-// ---------- Recherche ----------
-
-fn utf8_of(buf: &[u16]) -> Vec<u8> {
-    let n = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
-    String::from_utf16_lossy(&buf[..n]).into_bytes()
-}
-
-fn search(s: HWND, st: isize, en: isize, what: &[u8]) -> isize {
-    send(s, sci::SETTARGETSTART, st as usize, 0);
-    send(s, sci::SETTARGETEND, en as usize, 0);
-    send(s, sci::SEARCHINTARGET, what.len(), what.as_ptr() as isize)
-}
-
-fn flags(a: &App) -> usize {
-    let f = a.fr.Flags;
-    (if f & FR_MATCHCASE != 0 { 4 } else { 0 }) | (if f & FR_WHOLEWORD != 0 { 2 } else { 0 })
-}
-
-fn find_next(a: &mut App, down: bool) -> bool {
-    let what = utf8_of(&a.find_buf);
-    if what.is_empty() {
-        open_find(a, false);
-        return false;
+fn reload(a: &mut App) {
+    let Some(p) = a.docs[a.cur].path.clone() else { return };
+    match std::fs::read(&p) {
+        Ok(b) => {
+            let (t, e) = doc::decode(&b);
+            let (caret, first) = (send(a.sci, sci::GETCURRENTPOS, 0, 0), send(a.sci, sci::GETFIRSTVISIBLE, 0, 0));
+            let mut z = t.clone();
+            z.push(0);
+            send(a.sci, sci::SETTEXT, 0, z.as_ptr() as isize);
+            send(a.sci, sci::EMPTYUNDO, 0, 0);
+            send(a.sci, sci::SETSAVEPOINT, 0, 0);
+            send(a.sci, sci::SETSEL, caret as usize, caret);
+            send(a.sci, sci::SETFIRSTVISIBLE, first as usize, 0);
+            let d = &mut a.docs[a.cur];
+            (d.enc, d.dirty, d.mtime) = (e, false, mtime(&p));
+            refresh();
+        }
+        Err(e) => msg_box(&format!("Rechargement impossible : {e}")),
     }
-    let s = a.sci;
-    let len = send(s, sci::GETLENGTH, 0, 0);
-    send(s, sci::SETSEARCHFLAGS, flags(a), 0);
-    let (ss, se) = (send(s, sci::GETSELSTART, 0, 0), send(s, sci::GETSELEND, 0, 0));
-    let mut r = if down { search(s, se, len, &what) } else { search(s, ss, 0, &what) };
-    if r < 0 {
-        r = if down { search(s, 0, len, &what) } else { search(s, len, 0, &what) };
-    }
-    if r < 0 {
-        msg_box("Texte introuvable.");
-        return false;
-    }
-    let (ts, te) = (send(s, sci::GETTARGETSTART, 0, 0), send(s, sci::GETTARGETEND, 0, 0));
-    send(s, sci::SETSEL, ts as usize, te);
-    true
 }
 
-fn replace_one(a: &mut App) {
-    let (what, rep) = (utf8_of(&a.find_buf), utf8_of(&a.repl_buf));
-    let s = a.sci;
-    send(s, sci::SETSEARCHFLAGS, flags(a), 0);
-    let (ss, se) = (send(s, sci::GETSELSTART, 0, 0), send(s, sci::GETSELEND, 0, 0));
-    if !what.is_empty() && search(s, ss, se, &what) == ss && send(s, sci::GETTARGETEND, 0, 0) == se {
-        send(s, sci::REPLACETARGET, rep.len(), rep.as_ptr() as isize);
-        let e = send(s, sci::GETTARGETEND, 0, 0);
-        send(s, sci::SETSEL, e as usize, e);
-    }
-    find_next(a, true);
-}
-
-fn replace_all(a: &mut App) {
-    let (what, rep) = (utf8_of(&a.find_buf), utf8_of(&a.repl_buf));
-    if what.is_empty() {
+/// Appelé à l'activation de la fenêtre : détecte une modification externe du fichier courant.
+pub fn check_external() {
+    let a = app();
+    let Some(p) = a.docs.get(a.cur).and_then(|d| d.path.clone()) else { return };
+    let (old, new) = (a.docs[a.cur].mtime, mtime(&p));
+    if old.is_none() || new.is_none() || old == new {
         return;
     }
-    let s = a.sci;
-    send(s, sci::SETSEARCHFLAGS, flags(a), 0);
-    send(s, sci::BEGINUNDO, 0, 0);
-    let (mut pos, mut n) = (0isize, 0);
-    loop {
-        let len = send(s, sci::GETLENGTH, 0, 0);
-        if search(s, pos, len, &what) < 0 {
-            break;
-        }
-        send(s, sci::REPLACETARGET, rep.len(), rep.as_ptr() as isize);
-        pos = send(s, sci::GETTARGETEND, 0, 0);
-        n += 1;
+    a.docs[a.cur].mtime = new;
+    if !a.docs[a.cur].dirty {
+        reload(a);
+    } else if unsafe { MessageBoxW(a.hwnd, w("Le fichier a été modifié en dehors de WinNote. Recharger (vos changements seront perdus) ?").as_ptr(), w("WinNote").as_ptr(), MB_YESNO | MB_ICONQUESTION) } == IDYES {
+        reload(a);
     }
-    send(s, sci::ENDUNDO, 0, 0);
-    msg_box(&format!("{n} remplacement(s) effectué(s)."));
 }
 
-pub fn open_find(a: &mut App, replace: bool) {
+fn copy_text(s: &str) {
     unsafe {
-        if !a.find_dlg.is_null() {
-            DestroyWindow(a.find_dlg);
-            a.find_dlg = null_mut();
+        if OpenClipboard(app().hwnd) == 0 {
+            return;
         }
-        let (ss, se) = (send(a.sci, sci::GETSELSTART, 0, 0), send(a.sci, sci::GETSELEND, 0, 0));
-        if se > ss && se - ss < 200 {
-            let mut b = vec![0u8; (se - ss) as usize + 1];
-            send(a.sci, 2161, 0, b.as_mut_ptr() as isize); // SCI_GETSELTEXT
-            let t = String::from_utf8_lossy(&b[..b.len() - 1]).replace(['\r', '\n'], " ");
-            for (i, c) in t.encode_utf16().enumerate().take(500) {
-                a.find_buf[i] = c;
-                a.find_buf[i + 1] = 0;
-            }
+        EmptyClipboard();
+        let v = w(s);
+        let h = GlobalAlloc(GMEM_MOVEABLE, v.len() * 2);
+        if !h.is_null() {
+            std::ptr::copy_nonoverlapping(v.as_ptr(), GlobalLock(h) as *mut u16, v.len());
+            GlobalUnlock(h);
+            SetClipboardData(13, h as HANDLE); // CF_UNICODETEXT
         }
-        let fr = &mut *a.fr;
-        fr.lStructSize = std::mem::size_of::<FINDREPLACEW>() as u32;
-        fr.hwndOwner = a.hwnd;
-        fr.Flags |= FR_DOWN;
-        fr.lpstrFindWhat = a.find_buf.as_mut_ptr();
-        fr.wFindWhatLen = a.find_buf.len() as u16;
-        fr.lpstrReplaceWith = a.repl_buf.as_mut_ptr();
-        fr.wReplaceWithLen = a.repl_buf.len() as u16;
-        a.find_dlg = if replace { ReplaceTextW(fr) } else { FindTextW(fr) };
+        CloseClipboard();
     }
 }
 
-pub fn on_find_msg(p: *mut FINDREPLACEW) {
-    let a = app();
-    let f = unsafe { (*p).Flags };
-    if f & FR_DIALOGTERM != 0 {
-        a.find_dlg = null_mut();
-        a.fr.Flags &= !FR_DIALOGTERM;
-    } else if f & FR_REPLACEALL != 0 {
-        replace_all(a);
-    } else if f & FR_REPLACE != 0 {
-        replace_one(a);
-    } else if f & FR_FINDNEXT != 0 {
-        find_next(a, f & FR_DOWN != 0);
-    }
+fn shell_open(target: &str) {
+    unsafe { ShellExecuteW(null_mut(), w("open").as_ptr(), w(target).as_ptr(), null(), null(), SW_SHOWNORMAL) };
 }
 
 // ---------- Commandes ----------
@@ -607,12 +597,13 @@ pub fn on_command(id: usize) {
                 open_path(&p);
             }
         }
-        SAVE => {
-            save_doc(a, a.cur, false);
+        OPENFOLDER => {
+            if let Some(p) = pick_folder() {
+                crate::sidebar::set_root(&p);
+            }
         }
-        SAVEAS => {
-            save_doc(a, a.cur, true);
-        }
+        SAVE => drop(save_doc(a, a.cur, false)),
+        SAVEAS => drop(save_doc(a, a.cur, true)),
         SAVEALL => {
             let keep = a.cur;
             for i in 0..a.docs.len() {
@@ -623,9 +614,32 @@ pub fn on_command(id: usize) {
             switch_to(a, keep);
         }
         CLOSE => cmd_close(a.cur),
+        CLOSEOTHERS => close_many(Some(a.cur)),
+        CLOSEALL => close_many(None),
+        REOPEN => {
+            if let Some(p) = a.closed.pop() {
+                open_path(&p);
+            }
+        }
         EXIT => unsafe {
             SendMessageW(a.hwnd, WM_CLOSE, 0, 0);
         },
+        RELOAD => reload(a),
+        REVEALFILE => {
+            if let Some(p) = &a.docs[a.cur].path {
+                let _ = std::process::Command::new("explorer.exe").arg(format!("/select,{p}")).spawn();
+            }
+        }
+        COPYPATH => {
+            if let Some(p) = a.docs[a.cur].path.clone() {
+                copy_text(&p);
+            }
+        }
+        BROWSER => {
+            if let Some(p) = a.docs[a.cur].path.clone() {
+                shell_open(&p);
+            }
+        }
         UNDO => drop(send(s, sci::UNDO, 0, 0)),
         REDO => drop(send(s, sci::REDO, 0, 0)),
         CUT => drop(send(s, sci::CUT, 0, 0)),
@@ -633,16 +647,52 @@ pub fn on_command(id: usize) {
         PASTE => drop(send(s, sci::PASTE, 0, 0)),
         DEL => drop(send(s, sci::CLEAR, 0, 0)),
         SELALL => drop(send(s, sci::SELECTALL, 0, 0)),
-        FIND => open_find(a, false),
-        REPLACE => open_find(a, true),
-        FINDNEXT => drop(find_next(a, true)),
-        FINDPREV => drop(find_next(a, false)),
+        FIND => crate::findbar::open(false),
+        REPLACE => crate::findbar::open(true),
+        FINDNEXT => crate::findbar::find_next(true),
+        FINDPREV => crate::findbar::find_next(false),
+        FINDINFILES => palette::open(Mode::InFiles),
+        GOTO => palette::open(Mode::Goto),
+        PALETTE => palette::open(Mode::Commands),
+        QUICKOPEN => palette::open(Mode::Quick),
         DUPLINE => drop(send(s, sci::LINEDUP, 0, 0)),
         DELLINE => drop(send(s, sci::LINEDELETE, 0, 0)),
         UPPER => drop(send(s, sci::UPPER, 0, 0)),
         LOWER => drop(send(s, sci::LOWER, 0, 0)),
+        MOVEUP => drop(send(s, sci::MOVELINESUP, 0, 0)),
+        MOVEDOWN => drop(send(s, sci::MOVELINESDOWN, 0, 0)),
+        SORTASC => textops::sort_lines(false),
+        SORTDESC => textops::sort_lines(true),
+        DEDUPE => textops::dedupe(),
+        TRIM => textops::trim(),
+        JOIN => textops::join(),
+        TOGGLECOMMENT => textops::toggle_comment(),
+        TITLECASE => textops::title_case(),
+        TABS2SPACES => textops::tabs_to_spaces(),
+        SPACES2TABS => textops::spaces_to_tabs(),
+        SELNEXT => drop(send(s, sci::SELADDNEXT, 0, 0)),
+        OPENLINK => textops::open_link(),
+        STATS => textops::stats(),
+        BOOKTOGGLE => {
+            send(s, sci::SETMARGINW, 1, (14 * a.dpi as i32 / 96) as isize);
+            textops::bookmark_toggle();
+        }
+        BOOKNEXT => textops::bookmark_step(true),
+        BOOKPREV => textops::bookmark_step(false),
+        BOOKCLEAR => drop(send(s, sci::MARKERDELETEALL, 1, 0)),
+        FOLDALL => drop(send(s, sci::FOLDALL, 0, 0)),
+        UNFOLDALL => drop(send(s, sci::FOLDALL, 1, 0)),
+        FOLDMARGIN => {
+            a.fold = !a.fold;
+            style_editor(a);
+            refresh();
+        }
         DATETIME => {
-            let t = unsafe { GetLocalTime(&mut std::mem::zeroed()); let mut st = std::mem::zeroed(); GetLocalTime(&mut st); st };
+            let t = unsafe {
+                let mut st = std::mem::zeroed();
+                GetLocalTime(&mut st);
+                st
+            };
             let txt = format!("{:02}:{:02} {:02}/{:02}/{}", t.wHour, t.wMinute, t.wDay, t.wMonth, t.wYear);
             send(s, sci::REPLACESEL, 0, cstr(&txt).as_ptr() as isize);
         }
@@ -666,13 +716,51 @@ pub fn on_command(id: usize) {
             relayout();
             refresh();
         }
+        SIDEBAR | OUTLINE => {
+            let mode = (id == OUTLINE) as u8;
+            a.sidebar_vis = !(a.sidebar_vis && a.side_mode == mode);
+            relayout();
+            if a.sidebar_vis {
+                if mode == 1 { crate::sidebar::show_outline() } else { crate::sidebar::show_files() }
+            }
+            refresh();
+        }
+        PREVIEW => {
+            a.preview = !a.preview;
+            relayout();
+            crate::mdpreview::update();
+            refresh();
+        }
+        ZEN => toggle_zen(a),
+        TOPMOST => unsafe {
+            a.topmost = !a.topmost;
+            SetWindowPos(a.hwnd, if a.topmost { HWND_TOPMOST } else { HWND_NOTOPMOST }, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+            refresh();
+        },
+        READONLY => {
+            let r = send(s, sci::GETREADONLY, 0, 0) == 0;
+            send(s, sci::SETREADONLY, r as usize, 0);
+            refresh();
+        }
         FONT => choose_font(a),
         ZOOMIN => drop(send(s, sci::ZOOMIN, 0, 0)),
         ZOOMOUT => drop(send(s, sci::ZOOMOUT, 0, 0)),
         ZOOMRESET => drop(send(s, sci::SETZOOM, 0, 0)),
         TABNEXT => switch_to(a, (a.cur + 1) % a.docs.len()),
         TABPREV => switch_to(a, (a.cur + a.docs.len() - 1) % a.docs.len()),
-        ABOUT => msg_box("WinNote 0.1.0\nÉditeur de texte natif Windows 64 bits.\nMoteur : Scintilla + Lexilla."),
+        CHROME_WIN | CHROME_MAC => {
+            a.chrome = (id - CHROME_WIN) as u8;
+            apply_chrome(a);
+            apply_all(a);
+        }
+        UPDATE => crate::updater::check(true),
+        AUTOUPDATE => {
+            a.auto_update = !a.auto_update;
+            refresh();
+        }
+        REGISTER => msg_box(if crate::shell::register() { "WinNote est ajouté au menu « Modifier avec WinNote » de l'explorateur." } else { "Intégration impossible." }),
+        UNREGISTER => msg_box(if crate::shell::unregister() { "Intégration retirée." } else { "Rien à retirer." }),
+        ABOUT => msg_box(&format!("WinNote {}\nÉditeur de texte natif Windows 64 bits.\nMoteur : Scintilla + Lexilla.", env!("CARGO_PKG_VERSION"))),
         EOL..=134 => {
             let m = id - EOL;
             send(s, sci::SETEOLMODE, m, 0);
@@ -687,21 +775,27 @@ pub fn on_command(id: usize) {
             a.docs[a.cur].lang = id - LANG;
             set_lexer(a, id - LANG);
             style_editor(a);
+            crate::sidebar::refresh();
+            crate::mdpreview::update();
             refresh();
         }
         400..=499 if id - THEME < THEMES.len() => {
             a.theme = id - THEME;
             apply_all(a);
         }
-        500..=599 if id - LAYOUT < LAYOUTS.len() => {
-            let l = &LAYOUTS[id - LAYOUT];
-            (a.layout, a.font, a.size, a.wrap, a.lines, a.margin) = (id - LAYOUT, l.font.into(), l.size, l.wrap, l.lines, l.margin);
-            send(s, sci::SETZOOM, 0, 0);
-            apply_all(a);
+        500..=599 if id - LAYOUT < LAYOUTS.len() => apply_layout(a, id - LAYOUT),
+        700..=719 => {
+            if let Some(p) = a.recent.get(id - RECENT).cloned() {
+                open_path(&p);
+            }
+        }
+        CLEARRECENT => {
+            a.recent.clear();
+            crate::session::save_recent();
+            crate::menu::rebuild_recent(a);
         }
         _ => {}
     }
-    a.status_vis = a.status_vis; // état conservé
 }
 
 fn choose_font(a: &mut App) {
@@ -721,6 +815,7 @@ fn choose_font(a: &mut App) {
             a.font = String::from_utf16_lossy(&lf.lfFaceName[..n]);
             a.size = (cf.iPointSize / 10).clamp(6, 72);
             style_editor(a);
+            crate::mdpreview::restyle();
             refresh();
         }
     }
