@@ -1,0 +1,48 @@
+name: unix
+# Compile et teste les versions Linux (GTK3) et macOS ; le .dmg macOS est publie en artefact.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  linux:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Dependances
+        run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev pkg-config xvfb libenchant-2-2 hunspell-fr curl
+      - name: Compilation
+        run: cargo build --release --features gtk-ui --bin winnote-gtk
+      - name: Autotest integre
+        run: xvfb-run -a env GDK_BACKEND=x11 target/release/winnote-gtk --selftest selftest.log || { cat selftest.log; exit 1; }
+      - name: Journal d autotest
+        if: always()
+        run: cat selftest.log || true
+  macos:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, macos-13]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Dependances
+        run: brew install gtk+3 pkg-config dylibbundler enchant
+      - name: Compilation
+        run: cargo build --release --features gtk-ui --bin winnote-gtk
+      - name: Paquet .app et .dmg
+        run: scripts/package-macos.sh
+      - name: Autotest integre (application embarquee)
+        run: |
+          target/dist-mac/WinNote.app/Contents/MacOS/WinNote --selftest "$PWD/selftest.log" || { cat selftest.log; exit 1; }
+      - name: Journal d autotest
+        if: always()
+        run: cat selftest.log || true
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: WinNote-macos-${{ matrix.os }}
+          path: target/dist-mac/*.dmg
