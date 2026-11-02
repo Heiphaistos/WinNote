@@ -6,7 +6,7 @@ use crate::ids::*;
 use crate::lang::LANGS;
 use crate::sci::{self, send};
 use crate::theme::{LAYOUTS, THEMES};
-use crate::{app, cstr, notes, side, spell, textops, view, App};
+use crate::{app, chrome, cstr, notes, side, spell, textops, view, App};
 use gtk::prelude::*;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -36,6 +36,12 @@ pub fn apply_css() {
          togglebutton:checked {{ background-color: {acc}; color: {bg}; }}
          notebook button {{ border: none; background: transparent; padding: 0 2px; min-height: 0; min-width: 0; }}
          label {{ color: {uifg}; }}
+         #titlebar {{ background-color: {ui}; padding: 8px 0; }}
+         #titlebar label {{ color: {uifg}; font-weight: bold; }}
+         #traffic {{ min-width: 12px; min-height: 12px; padding: 0; border: none; border-radius: 50%; background-image: none; }}
+         #traffic.tl-close {{ background-color: #ff5f57; }}
+         #traffic.tl-min {{ background-color: #febc2e; }}
+         #traffic.tl-max {{ background-color: #28c840; }}
          #statusbar {{ background-color: {ui}; padding: 3px 12px; }}
          list, row, treeview, treeview.view {{ background-color: {ui}; color: {uifg}; }}
          treeview.view:selected {{ background-color: {acc}; color: {bg}; }}
@@ -76,6 +82,8 @@ pub fn sync_checks() {
                 TOPMOST => a.topmost,
                 READONLY => !a.docs.is_empty() && send(a.sci, sci::GETREADONLY, 0, 0) != 0,
                 AUTOUPDATE => a.auto_update,
+                CHROME_WIN => a.chrome == 0,
+                CHROME_MAC => a.chrome == 1,
                 x if (SPELLLANG..SPELLLANG + spell::LANGS.len()).contains(&x) => spell::LANGS[x - SPELLLANG].0 == a.spell_lang,
                 _ => item.is_active(),
             };
@@ -143,7 +151,7 @@ enum Act {
 
 /// Commandes disponibles dans la version Linux (le reste de la table est propre à Windows).
 fn supported(id: usize) -> bool {
-    !matches!(id, REGISTER | UNREGISTER | CHROME_WIN | CHROME_MAC | DWRITE)
+    !matches!(id, REGISTER | UNREGISTER | DWRITE) && !(cfg!(target_os = "macos") && matches!(id, CHROME_WIN | CHROME_MAC))
 }
 
 fn palette(items: Vec<(String, String, Act)>, title: &str) {
@@ -429,6 +437,11 @@ pub fn on_command(id: usize) {
             sync_checks();
         }
         PRINT => crate::print::print_doc(),
+        CHROME_WIN | CHROME_MAC => {
+            a.chrome = (id - CHROME_WIN) as u8;
+            chrome::apply();
+            sync_checks();
+        }
         NEWWINDOW => view::new_window(),
         SIDEBAR => side::toggle(0),
         OUTLINE => side::toggle(1),
@@ -644,6 +657,10 @@ fn build_menu(ag: &gtk::AccelGroup) -> gtk::MenuBar {
     check(&v, ag, "Aperçu Markdown", Some("<Primary><Shift>m"), PREVIEW);
     check(&v, ag, "Vue scindée", Some("<Primary>backslash"), SPLIT);
     check(&v, ag, "Toujours au premier plan", None, TOPMOST);
+    if !cfg!(target_os = "macos") {
+        check(&v, ag, "Barre de titre : système", None, CHROME_WIN);
+        check(&v, ag, "Barre de titre : style macOS", None, CHROME_MAC);
+    }
     check(&v, ag, "Lecture seule", None, READONLY);
     v.append(&gtk::SeparatorMenuItem::new());
     add(&v, ag, "Signet : basculer", Some("<Primary>F2"), BOOKTOGGLE);
@@ -688,6 +705,9 @@ pub fn build_app(test: bool) -> App {
     let ag = gtk::AccelGroup::new();
     win.add_accel_group(&ag);
     let vbox = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    let bar = chrome::Bar::new();
+    vbox.pack_start(&bar.root, false, false, 0);
+    chrome::hook_resize(&win);
     vbox.pack_start(&build_menu(&ag), false, false, 0);
     let nb = gtk::Notebook::new();
     nb.set_scrollable(true);
@@ -750,7 +770,7 @@ pub fn build_app(test: bool) -> App {
     });
     let l = &LAYOUTS[0];
     App {
-        win, nb, status, css, find: find_bar, side, psplit, rstack, prev, sci2, preview: false, split: false, spell: false,
+        win, nb, status, css, find: find_bar, side, vbox, bar, chrome: 0, psplit, rstack, prev, sci2, preview: false, split: false, spell: false,
         spell_lang: "fr_FR".into(), topmost: false, auto_update: true, nosession: false, docs: Vec::new(), cur: 0, sci: std::ptr::null_mut(), untitled: 0, theme: 0, layout: 0,
         wrap: l.wrap, lines: l.lines, ws: false, fold: false, font: l.font.into(), size: l.size, margin: l.margin, spacing: 0,
         root: None, recent: Vec::new(), closed: Vec::new(), quiet: test,

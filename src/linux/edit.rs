@@ -261,7 +261,9 @@ pub fn refresh() {
         t.label.set_text(&format!("{}{}", if t.dirty { "● " } else { "" }, title_of(t)));
     }
     let d = &a.docs[a.cur.min(a.docs.len() - 1)];
-    a.win.set_title(&format!("{}{} - WinNote", if d.dirty { "*" } else { "" }, title_of(d)));
+    let title = format!("{}{} - WinNote", if d.dirty { "*" } else { "" }, title_of(d));
+    a.win.set_title(&title);
+    a.bar.title.set_text(&title);
     crate::ui::update_status();
 }
 
@@ -476,6 +478,7 @@ pub fn load_settings() {
             "ws" => a.ws = b,
             "fold" => a.fold = b,
             "spell" => a.spell = b,
+            "chrome" => a.chrome = v.parse().ok().filter(|&x| x < 2).unwrap_or(0),
             "spell_lang" if crate::spell::LANGS.iter().any(|l| l.0 == v) => a.spell_lang = v.to_string(),
             "autoupdate" => a.auto_update = b,
             "font" => a.font = v.to_string(),
@@ -492,8 +495,8 @@ pub fn save_settings() {
     let a = app();
     let _ = std::fs::create_dir_all(cfg_dir());
     let s = format!(
-        "theme={}\nlayout={}\nwrap={}\nlines={}\nws={}\nfold={}\nspell={}\nspell_lang={}\nautoupdate={}\nfont={}\nsize={}\nmargin={}\nspacing={}\nroot={}\n",
-        a.theme, a.layout, a.wrap as u8, a.lines as u8, a.ws as u8, a.fold as u8, a.spell as u8, a.spell_lang, a.auto_update as u8, a.font, a.size, a.margin, a.spacing, a.root.clone().unwrap_or_default()
+        "theme={}\nlayout={}\nwrap={}\nlines={}\nws={}\nfold={}\nchrome={}\nspell={}\nspell_lang={}\nautoupdate={}\nfont={}\nsize={}\nmargin={}\nspacing={}\nroot={}\n",
+        a.theme, a.layout, a.wrap as u8, a.lines as u8, a.ws as u8, a.fold as u8, a.chrome, a.spell as u8, a.spell_lang, a.auto_update as u8, a.font, a.size, a.margin, a.spacing, a.root.clone().unwrap_or_default()
     );
     let _ = std::fs::write(cfg_dir().join("settings.ini"), s);
 }

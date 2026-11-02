@@ -35,7 +35,7 @@ jobs:
       - name: Compilation
         run: cargo build --release --features gtk-ui --bin winnote-gtk
       - name: Paquet .app et .dmg
-        run: scripts/package-macos.sh
+        run: bash scripts/package-macos.sh
       - name: Autotest integre (application embarquee)
         run: |
           target/dist-mac/WinNote.app/Contents/MacOS/WinNote --selftest "$PWD/selftest.log" || { cat selftest.log; exit 1; }

@@ -20,6 +20,7 @@ pub mod textops;
 pub mod theme;
 #[path = "../vers.rs"]
 pub mod vers;
+mod chrome;
 mod edit;
 mod find;
 mod print;
@@ -62,6 +63,10 @@ pub struct App {
     pub css: gtk::CssProvider,
     pub find: find::Bar,
     pub side: side::Side,
+    pub vbox: gtk::Box,
+    pub bar: chrome::Bar,
+    /// barre de titre : 0 = système, 1 = style macOS (Linux seulement)
+    pub chrome: u8,
     /// volet de gauche = éditeur, volet de droite = aperçu Markdown ou vue scindée
     pub psplit: gtk::Paned,
     pub rstack: gtk::Stack,
@@ -156,6 +161,7 @@ fn main() {
         edit::open_path(p);
     }
     a.win.show_all();
+    chrome::apply();
     a.find.hide();
     a.side.root.hide();
     a.rstack.hide();

@@ -11,6 +11,7 @@ AppPublisher=Heiphaistos
 AppPublisherURL=https://github.com/Heiphaistos/WinNote
 DefaultDirName={autopf}\WinNote
 DefaultGroupName=WinNote
+LicenseFile=..\LICENSE
 PrivilegesRequired=lowest
 OutputDir=..\target\installer
 OutputBaseFilename=WinNote-Setup-{#AppVersion}
