@@ -6,7 +6,7 @@ use crate::ids::*;
 use crate::lang::LANGS;
 use crate::sci::{self, send};
 use crate::theme::{LAYOUTS, THEMES};
-use crate::{app, cstr, textops, App};
+use crate::{app, cstr, notes, side, spell, textops, view, App};
 use gtk::prelude::*;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -37,7 +37,8 @@ pub fn apply_css() {
          notebook button {{ border: none; background: transparent; padding: 0 2px; min-height: 0; min-width: 0; }}
          label {{ color: {uifg}; }}
          #statusbar {{ background-color: {ui}; padding: 3px 12px; }}
-         list, row {{ background-color: {ui}; color: {uifg}; }}
+         list, row, treeview, treeview.view {{ background-color: {ui}; color: {uifg}; }}
+         treeview.view:selected {{ background-color: {acc}; color: {bg}; }}
          row:selected {{ background-color: {acc}; color: {bg}; }}"
     );
     let _ = a.css.load_from_data(css.as_bytes());
@@ -56,7 +57,7 @@ pub fn apply_all() {
 /// set_active() d'une CheckMenuItem émet « activate » : on neutralise le gestionnaire pendant la synchronisation.
 static mut SYNCING: bool = false;
 
-fn sync_checks() {
+pub fn sync_checks() {
     let a = app();
     unsafe { SYNCING = true };
     CHECKS.with(|c| {
@@ -66,6 +67,16 @@ fn sync_checks() {
                 LINES => a.lines,
                 WS => a.ws,
                 FOLDMARGIN => a.fold,
+                SIDEBAR => side::visible() && a.side.mode == 0,
+                OUTLINE => side::visible() && a.side.mode == 1,
+                BACKLINKS => side::visible() && a.side.mode == 2,
+                PREVIEW => a.preview,
+                SPLIT => a.split,
+                SPELL => a.spell,
+                TOPMOST => a.topmost,
+                READONLY => !a.docs.is_empty() && send(a.sci, sci::GETREADONLY, 0, 0) != 0,
+                AUTOUPDATE => a.auto_update,
+                x if (SPELLLANG..SPELLLANG + spell::LANGS.len()).contains(&x) => spell::LANGS[x - SPELLLANG].0 == a.spell_lang,
                 _ => item.is_active(),
             };
             if item.is_active() != on {
@@ -132,7 +143,7 @@ enum Act {
 
 /// Commandes disponibles dans la version Linux (le reste de la table est propre à Windows).
 fn supported(id: usize) -> bool {
-    !matches!(id, REGISTER | UNREGISTER | AUTOUPDATE | CHROME_WIN | CHROME_MAC | SIDEBAR | OUTLINE | PREVIEW | SPLIT | SPELL | BACKLINKS | NEWWINDOW | TOPMOST | PRINT | READONLY | DWRITE)
+    !matches!(id, REGISTER | UNREGISTER | CHROME_WIN | CHROME_MAC | DWRITE)
 }
 
 fn palette(items: Vec<(String, String, Act)>, title: &str) {
@@ -235,7 +246,7 @@ fn quick_open() {
     }
     if let Some(r) = a.root.clone() {
         let mut files = Vec::new();
-        walk(std::path::Path::new(&r), &mut files, 0);
+        notes::walk(std::path::Path::new(&r), &mut files, 0);
         for f in files {
             let s = f.to_string_lossy().to_string();
             if seen.insert(s.clone()) {
@@ -244,24 +255,6 @@ fn quick_open() {
         }
     }
     palette(v, "Ouverture rapide");
-}
-
-fn walk(root: &std::path::Path, out: &mut Vec<std::path::PathBuf>, depth: u32) {
-    if depth > 6 || out.len() > 5000 {
-        return;
-    }
-    let Ok(rd) = std::fs::read_dir(root) else { return };
-    for e in rd.flatten() {
-        let p = e.path();
-        let n = e.file_name().to_string_lossy().to_string();
-        if p.is_dir() {
-            if !matches!(n.as_str(), ".git" | "node_modules" | "target" | ".logs" | "dist" | "build") {
-                walk(&p, out, depth + 1);
-            }
-        } else {
-            out.push(p);
-        }
-    }
 }
 
 fn goto_line() {
@@ -282,7 +275,7 @@ fn goto_line() {
 fn choose_font() {
     let a = app();
     let d = gtk::FontChooserDialog::new(Some("Police"), Some(&a.win));
-    d.set_font(&format!("{} {}", linux_font(&a.font), a.size));
+    d.set_font(&format!("{} {}", edit::linux_font(&a.font), a.size));
     if d.run() == gtk::ResponseType::Ok {
         if let Some(desc) = d.font_desc() {
             a.font = desc.family().map(|f| f.to_string()).unwrap_or(a.font.clone());
@@ -291,15 +284,6 @@ fn choose_font() {
         }
     }
     d.close();
-}
-
-fn linux_font(f: &str) -> &str {
-    match f {
-        "Consolas" => "Monospace",
-        "Segoe UI" => "Sans",
-        "Georgia" => "Serif",
-        o => o,
-    }
 }
 
 fn stats() {
@@ -337,7 +321,7 @@ pub fn on_command(id: usize) {
         }
         OPENFOLDER => {
             if let Some(p) = edit::pick_folder() {
-                a.root = Some(p);
+                side::set_root(&p);
             }
         }
         SAVE => drop(edit::save_doc(doc_i, false)),
@@ -365,7 +349,7 @@ pub fn on_command(id: usize) {
         RELOAD => edit::reload(),
         REVEALFILE => {
             if let Some(p) = a.docs[doc_i].path.as_ref().and_then(|p| std::path::Path::new(p).parent().map(|d| d.to_path_buf())) {
-                let _ = std::process::Command::new("xdg-open").arg(p).spawn();
+                textops::open_url(&p.to_string_lossy());
             }
         }
         COPYPATH => {
@@ -439,8 +423,35 @@ pub fn on_command(id: usize) {
             let full = a.win.window().map_or(false, |w| w.state().contains(gtk::gdk::WindowState::FULLSCREEN));
             if full { a.win.unfullscreen() } else { a.win.fullscreen() }
         }
-        UPDATE => {
-            let _ = std::process::Command::new("xdg-open").arg("https://github.com/Heiphaistos/WinNote/releases/latest").spawn();
+        UPDATE => crate::update::check(true),
+        AUTOUPDATE => {
+            a.auto_update = !a.auto_update;
+            sync_checks();
+        }
+        PRINT => crate::print::print_doc(),
+        NEWWINDOW => view::new_window(),
+        SIDEBAR => side::toggle(0),
+        OUTLINE => side::toggle(1),
+        BACKLINKS => side::toggle(2),
+        PREVIEW => view::toggle_preview(),
+        SPLIT => view::toggle_split(),
+        READONLY => view::toggle_readonly(),
+        TOPMOST => view::toggle_topmost(),
+        SPELL => {
+            a.spell = !a.spell;
+            spell::check_visible();
+            if a.spell && !spell::init(&a.spell_lang) {
+                msg_box("Le correcteur nécessite Enchant et un dictionnaire (ex. : paquets libenchant-2-2 et hunspell-fr, ou brew install enchant).");
+            }
+            sync_checks();
+        }
+        SPELLLANG..=864 => {
+            a.spell_lang = spell::LANGS[id - SPELLLANG].0.to_string();
+            if !spell::init(&a.spell_lang) {
+                msg_box("Ce dictionnaire n'est pas installé sur le système.");
+            }
+            spell::check_visible();
+            sync_checks();
         }
         ABOUT => msg_box(&format!("WinNote {}\nÉditeur de texte natif (Linux / GTK3).\nMoteur : Scintilla + Lexilla.", env!("CARGO_PKG_VERSION"))),
         EOL..=134 => {
@@ -522,8 +533,8 @@ fn sub(bar: &gtk::MenuBar, label: &str) -> gtk::Menu {
 fn build_menu(ag: &gtk::AccelGroup) -> gtk::MenuBar {
     let bar = gtk::MenuBar::new();
     let f = sub(&bar, "Fichier");
-    add(&f, ag, "Nouvel onglet", Some("<Control>n"), NEW);
-    add(&f, ag, "Ouvrir...", Some("<Control>o"), OPEN);
+    add(&f, ag, "Nouvel onglet", Some("<Primary>n"), NEW);
+    add(&f, ag, "Ouvrir...", Some("<Primary>o"), OPEN);
     add(&f, ag, "Ouvrir un dossier...", None, OPENFOLDER);
     let rec = gtk::Menu::new();
     let rec_item = gtk::MenuItem::with_label("Fichiers récents");
@@ -549,51 +560,58 @@ fn build_menu(ag: &gtk::AccelGroup) -> gtk::MenuBar {
             rec.show_all();
         });
     }
-    add(&f, ag, "Rouvrir l'onglet fermé", Some("<Control><Shift>t"), REOPEN);
+    add(&f, ag, "Rouvrir l'onglet fermé", Some("<Primary><Shift>t"), REOPEN);
     f.append(&gtk::SeparatorMenuItem::new());
-    add(&f, ag, "Enregistrer", Some("<Control>s"), SAVE);
-    add(&f, ag, "Enregistrer sous...", Some("<Control><Shift>s"), SAVEAS);
-    add(&f, ag, "Tout enregistrer", Some("<Control><Alt>s"), SAVEALL);
+    add(&f, ag, "Enregistrer", Some("<Primary>s"), SAVE);
+    add(&f, ag, "Enregistrer sous...", Some("<Primary><Shift>s"), SAVEAS);
+    add(&f, ag, "Tout enregistrer", Some("<Primary><Alt>s"), SAVEALL);
     add(&f, ag, "Recharger depuis le disque", None, RELOAD);
+    add(&f, ag, "Imprimer...", Some("<Primary>p"), PRINT);
+    add(&f, ag, "Ouvrir dans une nouvelle fenêtre", None, NEWWINDOW);
     f.append(&gtk::SeparatorMenuItem::new());
     add(&f, ag, "Afficher dans le gestionnaire de fichiers", None, REVEALFILE);
     add(&f, ag, "Copier le chemin", None, COPYPATH);
     f.append(&gtk::SeparatorMenuItem::new());
-    add(&f, ag, "Fermer l'onglet", Some("<Control>w"), CLOSE);
+    add(&f, ag, "Fermer l'onglet", Some("<Primary>w"), CLOSE);
     add(&f, ag, "Fermer les autres onglets", None, CLOSEOTHERS);
-    add(&f, ag, "Quitter", Some("<Control>q"), EXIT);
+    add(&f, ag, "Quitter", Some("<Primary>q"), EXIT);
 
     let e = sub(&bar, "Édition");
     for (l, i) in [("Annuler", UNDO), ("Rétablir", REDO), ("Couper", CUT), ("Copier", COPY), ("Coller", PASTE), ("Supprimer", DEL), ("Tout sélectionner", SELALL)] {
         add(&e, ag, l, None, i);
     }
     e.append(&gtk::SeparatorMenuItem::new());
-    add(&e, ag, "Rechercher...", Some("<Control>f"), FIND);
+    add(&e, ag, "Rechercher...", Some("<Primary>f"), FIND);
     add(&e, ag, "Suivant", Some("F3"), FINDNEXT);
     add(&e, ag, "Précédent", Some("<Shift>F3"), FINDPREV);
-    add(&e, ag, "Remplacer...", Some("<Control>h"), REPLACE);
-    add(&e, ag, "Aller à la ligne...", Some("<Control>g"), GOTO);
+    add(&e, ag, "Remplacer...", Some("<Primary>h"), REPLACE);
+    add(&e, ag, "Aller à la ligne...", Some("<Primary>g"), GOTO);
     e.append(&gtk::SeparatorMenuItem::new());
     add(&e, ag, "Ajouter l'occurrence suivante", Some("<Alt>d"), SELNEXT);
-    add(&e, ag, "Ouvrir le lien sous le curseur", Some("<Control>Return"), OPENLINK);
+    add(&e, ag, "Ouvrir le lien sous le curseur", Some("<Primary>Return"), OPENLINK);
     add(&e, ag, "Heure et date", Some("F5"), DATETIME);
-    add(&e, ag, "Palette de commandes...", Some("<Control><Shift>p"), PALETTE);
-    add(&e, ag, "Ouverture rapide...", Some("<Control>e"), QUICKOPEN);
+    add(&e, ag, "Palette de commandes...", Some("<Primary><Shift>p"), PALETTE);
+    add(&e, ag, "Ouverture rapide...", Some("<Primary>e"), QUICKOPEN);
+    e.append(&gtk::SeparatorMenuItem::new());
+    check(&e, ag, "Correcteur orthographique", None, SPELL);
+    for (i, l) in spell::LANGS.iter().enumerate() {
+        check(&e, ag, &format!("   Dictionnaire : {}", l.1), None, SPELLLANG + i);
+    }
 
     let l = sub(&bar, "Lignes");
     add(&l, ag, "Déplacer vers le haut", Some("<Alt>Up"), MOVEUP);
     add(&l, ag, "Déplacer vers le bas", Some("<Alt>Down"), MOVEDOWN);
-    add(&l, ag, "Dupliquer", Some("<Control>d"), DUPLINE);
-    add(&l, ag, "Supprimer", Some("<Control><Shift>k"), DELLINE);
-    add(&l, ag, "Joindre", Some("<Control>j"), JOIN);
+    add(&l, ag, "Dupliquer", Some("<Primary>d"), DUPLINE);
+    add(&l, ag, "Supprimer", Some("<Primary><Shift>k"), DELLINE);
+    add(&l, ag, "Joindre", Some("<Primary>j"), JOIN);
     l.append(&gtk::SeparatorMenuItem::new());
     for (t, i) in [("Trier A → Z", SORTASC), ("Trier Z → A", SORTDESC), ("Supprimer les doublons", DEDUPE), ("Supprimer les espaces en fin de ligne", TRIM)] {
         add(&l, ag, t, None, i);
     }
     l.append(&gtk::SeparatorMenuItem::new());
-    add(&l, ag, "Commenter / décommenter", Some("<Control>slash"), TOGGLECOMMENT);
-    add(&l, ag, "EN MAJUSCULES", Some("<Control><Shift>u"), UPPER);
-    add(&l, ag, "en minuscules", Some("<Control>u"), LOWER);
+    add(&l, ag, "Commenter / décommenter", Some("<Primary>slash"), TOGGLECOMMENT);
+    add(&l, ag, "EN MAJUSCULES", Some("<Primary><Shift>u"), UPPER);
+    add(&l, ag, "en minuscules", Some("<Primary>u"), LOWER);
     add(&l, ag, "Première Lettre En Majuscule", None, TITLECASE);
     add(&l, ag, "Tabulations → espaces", None, TABS2SPACES);
     add(&l, ag, "Espaces → tabulations", None, SPACES2TABS);
@@ -610,25 +628,33 @@ fn build_menu(ag: &gtk::AccelGroup) -> gtk::MenuBar {
     }
 
     let v = sub(&bar, "Affichage");
-    add(&v, ag, "Zoom avant", Some("<Control>plus"), ZOOMIN);
-    add(&v, ag, "Zoom avant (=)", Some("<Control>equal"), ZOOMIN);
-    add(&v, ag, "Zoom arrière", Some("<Control>minus"), ZOOMOUT);
-    add(&v, ag, "Zoom par défaut", Some("<Control>0"), ZOOMRESET);
+    add(&v, ag, "Zoom avant", Some("<Primary>plus"), ZOOMIN);
+    add(&v, ag, "Zoom avant (=)", Some("<Primary>equal"), ZOOMIN);
+    add(&v, ag, "Zoom arrière", Some("<Primary>minus"), ZOOMOUT);
+    add(&v, ag, "Zoom par défaut", Some("<Primary>0"), ZOOMRESET);
     v.append(&gtk::SeparatorMenuItem::new());
     check(&v, ag, "Numéros de ligne", None, LINES);
     check(&v, ag, "Marge de repli", None, FOLDMARGIN);
     check(&v, ag, "Espaces et tabulations visibles", None, WS);
     add(&v, ag, "Mode plein écran", Some("F11"), ZEN);
     v.append(&gtk::SeparatorMenuItem::new());
-    add(&v, ag, "Signet : basculer", Some("<Control>F2"), BOOKTOGGLE);
+    check(&v, ag, "Explorateur de fichiers", Some("<Primary><Shift>e"), SIDEBAR);
+    check(&v, ag, "Plan du document", Some("<Primary><Shift>o"), OUTLINE);
+    check(&v, ag, "Liens entrants (backlinks)", None, BACKLINKS);
+    check(&v, ag, "Aperçu Markdown", Some("<Primary><Shift>m"), PREVIEW);
+    check(&v, ag, "Vue scindée", Some("<Primary>backslash"), SPLIT);
+    check(&v, ag, "Toujours au premier plan", None, TOPMOST);
+    check(&v, ag, "Lecture seule", None, READONLY);
+    v.append(&gtk::SeparatorMenuItem::new());
+    add(&v, ag, "Signet : basculer", Some("<Primary>F2"), BOOKTOGGLE);
     add(&v, ag, "Signet suivant", Some("F2"), BOOKNEXT);
     add(&v, ag, "Signet précédent", Some("<Shift>F2"), BOOKPREV);
     add(&v, ag, "Effacer les signets", None, BOOKCLEAR);
     add(&v, ag, "Tout replier", None, FOLDALL);
     add(&v, ag, "Tout déplier", None, UNFOLDALL);
     v.append(&gtk::SeparatorMenuItem::new());
-    add(&v, ag, "Onglet suivant", Some("<Control>Page_Down"), TABNEXT);
-    add(&v, ag, "Onglet précédent", Some("<Control>Page_Up"), TABPREV);
+    add(&v, ag, "Onglet suivant", Some("<Primary>Page_Down"), TABNEXT);
+    add(&v, ag, "Onglet précédent", Some("<Primary>Page_Up"), TABPREV);
 
     let th = sub(&bar, "Thème");
     for (i, t) in THEMES.iter().enumerate() {
@@ -648,7 +674,8 @@ fn build_menu(ag: &gtk::AccelGroup) -> gtk::MenuBar {
     }
     let h = sub(&bar, "?");
     add(&h, ag, "Statistiques du document", None, STATS);
-    add(&h, ag, "Rechercher une mise à jour (page des versions)", None, UPDATE);
+    add(&h, ag, "Rechercher une mise à jour", None, UPDATE);
+    check(&h, ag, "Mises à jour automatiques", None, AUTOUPDATE);
     add(&h, ag, "À propos de WinNote", None, ABOUT);
     bar
 }
@@ -666,7 +693,21 @@ pub fn build_app(test: bool) -> App {
     nb.set_scrollable(true);
     let find_bar = Bar::new();
     vbox.pack_start(&find_bar.root, false, false, 0);
-    vbox.pack_start(&nb, true, true, 0);
+    // aperçu Markdown et vue scindée partagent le volet de droite
+    let (prev, prev_w) = edit::new_sci();
+    view::setup_preview(prev);
+    let (sci2, sci2_w) = edit::new_sci();
+    let rstack = gtk::Stack::new();
+    rstack.add_named(&prev_w, "prev");
+    rstack.add_named(&sci2_w, "split");
+    let psplit = gtk::Paned::new(gtk::Orientation::Horizontal);
+    psplit.pack1(&nb, true, false);
+    psplit.pack2(&rstack, true, false);
+    let side = side::Side::new();
+    let body = gtk::Paned::new(gtk::Orientation::Horizontal);
+    body.pack1(&side.root, false, false);
+    body.pack2(&psplit, true, false);
+    vbox.pack_start(&body, true, true, 0);
     let status = gtk::Label::new(None);
     status.set_xalign(0.0);
     status.set_widget_name("statusbar");
@@ -683,6 +724,7 @@ pub fn build_app(test: bool) -> App {
             a.sci = a.docs[a.cur].sci;
             find::mark_all();
             edit::refresh();
+            view::on_tab_changed();
         }
     });
     nb.connect_page_reordered(|_, child, idx| {
@@ -708,7 +750,8 @@ pub fn build_app(test: bool) -> App {
     });
     let l = &LAYOUTS[0];
     App {
-        win, nb, status, css, find: find_bar, docs: Vec::new(), cur: 0, sci: std::ptr::null_mut(), untitled: 0, theme: 0, layout: 0,
+        win, nb, status, css, find: find_bar, side, psplit, rstack, prev, sci2, preview: false, split: false, spell: false,
+        spell_lang: "fr_FR".into(), topmost: false, auto_update: true, nosession: false, docs: Vec::new(), cur: 0, sci: std::ptr::null_mut(), untitled: 0, theme: 0, layout: 0,
         wrap: l.wrap, lines: l.lines, ws: false, fold: false, font: l.font.into(), size: l.size, margin: l.margin, spacing: 0,
         root: None, recent: Vec::new(), closed: Vec::new(), quiet: test,
     }

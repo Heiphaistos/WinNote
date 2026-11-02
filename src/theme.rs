@@ -98,3 +98,9 @@ pub static LAYOUTS: [Layout; 8] = [
     Layout { preview: true, spacing: 2, ..l("Markdown (édition + aperçu)", "Segoe UI", 13, true, false, 20) },
     Layout { spacing: 5, ..l("Sans distraction", "Georgia", 16, true, false, 150) },
 ];
+
+/// Mélange deux couleurs COLORREF : t % de b, le reste de a.
+pub fn blend(a: u32, b: u32, t: u32) -> u32 {
+    let f = |s: u32| ((a >> s & 0xFF) * (100 - t) + (b >> s & 0xFF) * t) / 100;
+    f(0) | f(8) << 8 | f(16) << 16
+}

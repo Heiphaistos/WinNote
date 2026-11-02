@@ -18,10 +18,7 @@ pub fn status_height() -> i32 {
     scale(28)
 }
 
-pub fn blend(a: u32, b: u32, t: u32) -> u32 {
-    let f = |s: u32| ((a >> s & 0xFF) * (100 - t) + (b >> s & 0xFF) * t) / 100;
-    f(0) | f(8) << 8 | f(16) << 16
-}
+pub use crate::theme::blend;
 
 #[derive(Clone, Copy, PartialEq)]
 enum Hit { None, Tab(usize), Close(usize), Plus }

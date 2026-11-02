@@ -12,7 +12,7 @@ abs=$(cd "$out" && pwd)
 st="$out/winnote-$ver-linux-x86_64"
 mkdir -p "$st"
 install -m755 "$bin" "$st/winnote"
-cp assets/winnote.desktop assets/winnote.png README.md THIRD_PARTY_NOTICES.md "$st/"
+cp assets/winnote.desktop assets/winnote.png README.md LICENSE THIRD_PARTY_NOTICES.md "$st/"
 cat > "$st/install.sh" <<'EOS'
 #!/bin/sh
 # Installation pour l'utilisateur courant (sans root) : ~/.local
@@ -33,7 +33,7 @@ mkdir -p "$d/DEBIAN" "$d/usr/bin" "$d/usr/share/applications" "$d/usr/share/icon
 install -m755 "$bin" "$d/usr/bin/winnote"
 install -m644 assets/winnote.desktop "$d/usr/share/applications/winnote.desktop"
 install -m644 assets/winnote.png "$d/usr/share/icons/hicolor/256x256/apps/winnote.png"
-install -m644 README.md THIRD_PARTY_NOTICES.md "$d/usr/share/doc/winnote/"
+install -m644 README.md LICENSE THIRD_PARTY_NOTICES.md "$d/usr/share/doc/winnote/"
 size=$(du -sk "$d/usr" | cut -f1)
 cat > "$d/DEBIAN/control" <<EOC
 Package: winnote
@@ -58,7 +58,7 @@ Name: winnote
 Version: $ver
 Release: 1
 Summary: Editeur de texte leger (GTK3, moteur Scintilla)
-License: Freeware AND HPND
+License: PolyForm-Noncommercial-1.0.0 AND HPND
 URL: https://github.com/Heiphaistos/WinNote
 Requires: gtk3
 AutoReqProv: no

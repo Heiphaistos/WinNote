@@ -208,8 +208,8 @@ fn open_url(u: &str) {
 }
 
 #[cfg(unix)]
-fn open_url(u: &str) {
-    let _ = std::process::Command::new("xdg-open").arg(u).spawn();
+pub fn open_url(u: &str) {
+    let _ = std::process::Command::new(if cfg!(target_os = "macos") { "open" } else { "xdg-open" }).arg(u).spawn();
 }
 
 /// Ouvre le lien [[note]], l'URL ou le chemin sous le curseur.

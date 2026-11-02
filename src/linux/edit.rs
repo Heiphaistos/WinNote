@@ -23,13 +23,25 @@ pub fn msg_box(s: &str) {
     d.close();
 }
 
-fn linux_font(f: &str) -> &str {
+/// Polices Windows des thèmes -> polices disponibles sous Linux / macOS.
+pub fn linux_font(f: &str) -> &str {
+    let mac = cfg!(target_os = "macos");
     match f {
-        "Consolas" => "Monospace",
-        "Segoe UI" => "Sans",
-        "Georgia" => "Serif",
+        "Consolas" => if mac { "Menlo" } else { "Monospace" },
+        "Segoe UI" => if mac { "Helvetica Neue" } else { "Sans" },
+        "Georgia" => if mac { "Georgia" } else { "Serif" },
         o => o,
     }
+}
+
+/// Crée un contrôle Scintilla GTK (UTF-8) et renvoie son pointeur et son widget.
+pub fn new_sci() -> (HWND, gtk::Widget) {
+    let ptr = unsafe { scintilla_object_new() };
+    let widget: gtk::Widget = unsafe { gtk::Widget::from_glib_none(ptr as *mut gtk::ffi::GtkWidget) };
+    widget.set_hexpand(true);
+    widget.set_vexpand(true);
+    send(ptr, sci::SETCODEPAGE, 65001, 0);
+    (ptr, widget)
 }
 
 fn mtext(s: HWND) -> Vec<u8> {
@@ -131,6 +143,8 @@ pub fn restyle_all() {
         style_view(t.sci, t.lang);
     }
     crate::find::style_indicator();
+    crate::spell::style_indicator();
+    crate::view::restyle();
 }
 
 // ---------- Onglets ----------
@@ -146,7 +160,10 @@ unsafe extern "C" fn on_notify(_w: *mut c_void, _id: c_int, n: *mut c_void, data
             a.docs[i].dirty = code == sci::SCN_SAVEPOINTLEFT;
             refresh();
         }
-        sci::SCN_UPDATEUI => crate::ui::update_status(),
+        sci::SCN_UPDATEUI => {
+            crate::ui::update_status();
+            crate::view::schedule();
+        }
         2001 => {
             if *(base.add(32) as *const i32) == 10 {
                 let s = a.docs[i].sci;
@@ -165,11 +182,7 @@ unsafe extern "C" fn on_notify(_w: *mut c_void, _id: c_int, n: *mut c_void, data
 
 pub fn new_tab(path: Option<String>, text: Option<(Vec<u8>, Enc)>, dirty: bool, untitled_in: u32) {
     let a = app();
-    let ptr = unsafe { scintilla_object_new() };
-    let widget: gtk::Widget = unsafe { gtk::Widget::from_glib_none(ptr as *mut gtk::ffi::GtkWidget) };
-    widget.set_hexpand(true);
-    widget.set_vexpand(true);
-    send(ptr, sci::SETCODEPAGE, 65001, 0);
+    let (ptr, widget) = new_sci();
     let (lang, untitled) = match &path {
         Some(p) => (lang::by_path(p), 0),
         None => {
@@ -223,7 +236,10 @@ pub fn new_tab(path: Option<String>, text: Option<(Vec<u8>, Enc)>, dirty: bool, 
     a.docs[idx as usize].dirty = dirty;
     set_lexer(ptr, lang);
     style_view(ptr, lang);
+    crate::view::hook_tab(&widget, ptr);
+    crate::spell::style_indicator();
     refresh();
+    crate::view::on_tab_changed();
     unsafe { gtk::ffi::gtk_widget_grab_focus(ptr as *mut _) };
 }
 
@@ -304,6 +320,7 @@ pub fn drop_tab(i: usize) {
     }
     drop(page);
     refresh();
+    crate::view::on_tab_changed();
 }
 
 pub fn close_others(keep: usize) {
@@ -458,6 +475,9 @@ pub fn load_settings() {
             "lines" => a.lines = b,
             "ws" => a.ws = b,
             "fold" => a.fold = b,
+            "spell" => a.spell = b,
+            "spell_lang" if crate::spell::LANGS.iter().any(|l| l.0 == v) => a.spell_lang = v.to_string(),
+            "autoupdate" => a.auto_update = b,
             "font" => a.font = v.to_string(),
             "size" => a.size = v.parse().unwrap_or(a.size).clamp(6, 72),
             "margin" => a.margin = v.parse().unwrap_or(a.margin).clamp(0, 400),
@@ -472,8 +492,8 @@ pub fn save_settings() {
     let a = app();
     let _ = std::fs::create_dir_all(cfg_dir());
     let s = format!(
-        "theme={}\nlayout={}\nwrap={}\nlines={}\nws={}\nfold={}\nfont={}\nsize={}\nmargin={}\nspacing={}\nroot={}\n",
-        a.theme, a.layout, a.wrap as u8, a.lines as u8, a.ws as u8, a.fold as u8, a.font, a.size, a.margin, a.spacing, a.root.clone().unwrap_or_default()
+        "theme={}\nlayout={}\nwrap={}\nlines={}\nws={}\nfold={}\nspell={}\nspell_lang={}\nautoupdate={}\nfont={}\nsize={}\nmargin={}\nspacing={}\nroot={}\n",
+        a.theme, a.layout, a.wrap as u8, a.lines as u8, a.ws as u8, a.fold as u8, a.spell as u8, a.spell_lang, a.auto_update as u8, a.font, a.size, a.margin, a.spacing, a.root.clone().unwrap_or_default()
     );
     let _ = std::fs::write(cfg_dir().join("settings.ini"), s);
 }
@@ -481,6 +501,9 @@ pub fn save_settings() {
 /// Sortie « à chaud » : les onglets non enregistrés sont conservés et restaurés au prochain lancement.
 pub fn save_session() {
     let a = app();
+    if a.nosession {
+        return;
+    }
     let d = cfg_dir().join("session");
     let _ = std::fs::remove_dir_all(&d);
     if std::fs::create_dir_all(&d).is_err() {

@@ -1,4 +1,4 @@
-//! WinNote pour Linux : interface GTK3 + moteur Scintilla/Lexilla (même cœur que la version Windows).
+//! WinNote pour Linux et macOS : interface GTK3 + moteur Scintilla/Lexilla (même cœur que la version Windows).
 //! Compilation : cargo build --release --features gtk-ui --bin winnote-gtk  (nécessite libgtk-3-dev)
 #![allow(dead_code, static_mut_refs)]
 
@@ -8,16 +8,27 @@ pub mod doc;
 pub mod ids;
 #[path = "../lang.rs"]
 pub mod lang;
+#[path = "../mdrender.rs"]
+pub mod mdrender;
+#[path = "../notes.rs"]
+pub mod notes;
 #[path = "../sci.rs"]
 pub mod sci;
 #[path = "../textops.rs"]
 pub mod textops;
 #[path = "../theme.rs"]
 pub mod theme;
+#[path = "../vers.rs"]
+pub mod vers;
 mod edit;
 mod find;
+mod print;
 mod selftest;
+mod side;
+mod spell;
 mod ui;
+mod update;
+mod view;
 
 use doc::Enc;
 use gtk::prelude::*;
@@ -50,6 +61,12 @@ pub struct App {
     pub status: gtk::Label,
     pub css: gtk::CssProvider,
     pub find: find::Bar,
+    pub side: side::Side,
+    /// volet de gauche = éditeur, volet de droite = aperçu Markdown ou vue scindée
+    pub psplit: gtk::Paned,
+    pub rstack: gtk::Stack,
+    pub prev: HWND,
+    pub sci2: HWND,
     pub docs: Vec<Tab>,
     pub cur: usize,
     /// Vue Scintilla de l'onglet courant (utilisée par textops).
@@ -61,6 +78,12 @@ pub struct App {
     pub lines: bool,
     pub ws: bool,
     pub fold: bool,
+    pub preview: bool,
+    pub split: bool,
+    pub spell: bool,
+    pub spell_lang: String,
+    pub topmost: bool,
+    pub auto_update: bool,
     pub font: String,
     pub size: i32,
     pub margin: i32,
@@ -69,11 +92,17 @@ pub struct App {
     pub recent: Vec<String>,
     pub closed: Vec<String>,
     pub quiet: bool,
+    /// lancé avec des fichiers en argument : ne touche pas à la session des autres fenêtres
+    pub nosession: bool,
 }
 
 static mut APP: *mut App = null_mut();
 pub fn app() -> &'static mut App {
     unsafe { &mut *APP }
+}
+
+fn arg_after(args: &[String], flag: &str) -> Option<usize> {
+    args.iter().position(|a| a == flag)
 }
 
 fn main() {
@@ -82,39 +111,66 @@ fn main() {
         println!("winnote-gtk {}", env!("CARGO_PKG_VERSION"));
         return;
     }
-    eprintln!("A init");
+    // vérification de mise à jour en ligne de commande (sans interface) : écrit le résultat dans un fichier
+    if let Some(i) = arg_after(&args, "--update-check") {
+        let out = match update::fetch() {
+            Ok(Some(f)) => format!("nouvelle version {} url={} sha={}", f.version, f.url, f.sha),
+            Ok(None) => "a jour".to_string(),
+            Err(e) => format!("erreur : {e}"),
+        };
+        let _ = std::fs::write(args.get(i + 1).map_or("update.txt", |s| s.as_str()), out);
+        return;
+    }
     gtk::init().expect("GTK n'a pas pu démarrer (pas d'affichage ?)");
-    let test = args.iter().position(|a| a == "--selftest");
-    eprintln!("B build");
-    let a = Box::new(ui::build_app(test.is_some()));
-    unsafe { APP = Box::into_raw(a) };
+    let test = arg_after(&args, "--selftest");
+    let files: Vec<&String> = args.iter().filter(|x| !x.starts_with("--")).collect();
+    let print_to = arg_after(&args, "--print-to");
+    let mut a = ui::build_app(test.is_some() || print_to.is_some());
+    a.nosession = !files.is_empty() || test.is_some();
+    unsafe { APP = Box::into_raw(Box::new(a)) };
     let a = app();
-    eprintln!("C settings");
     edit::load_settings();
-    eprintln!("D tab");
     edit::new_tab(None, None, false, 0);
-    eprintln!("E apply");
     ui::apply_all();
-    eprintln!("F done");
     if let Some(i) = test {
         let code = selftest::run(args.get(i + 1).map_or("selftest.log", |s| s.as_str()));
         std::process::exit(code);
     }
-    eprintln!("G restore");
-    if !edit::restore_session() {
-        // rien à restaurer : l'onglet vide créé au démarrage suffit
+    // --print-to sortie.pdf fichier : impression de test dans un PDF
+    if let Some(i) = print_to {
+        if let (Some(out), Some(f)) = (args.get(i + 1), args.get(i + 2)) {
+            edit::open_path(f);
+            let r = print::export_pdf(out);
+            println!("{}", match &r {
+                Ok(n) => format!("{n} page(s)"),
+                Err(e) => format!("erreur : {e}"),
+            });
+            std::process::exit(r.is_err() as i32);
+        }
+        std::process::exit(2);
     }
-    eprintln!("H open args");
-    for p in args.iter().filter(|x| !x.starts_with("--")) {
+    if !a.nosession {
+        edit::restore_session();
+    }
+    for p in &files {
         edit::open_path(p);
     }
-    eprintln!("I show");
     a.win.show_all();
-    eprintln!("J shown");
     a.find.hide();
-    gtk::glib::timeout_add_seconds_local(30, || {
-        edit::save_session();
-        gtk::glib::ControlFlow::Continue
-    });
+    a.side.root.hide();
+    a.rstack.hide();
+    ui::sync_checks();
+    view::relayout();
+    if a.root.is_some() && !a.nosession {
+        // le dossier ouvert la dernière fois reste visible dans le panneau
+        side::set_root(&a.root.clone().unwrap_or_default());
+    }
+    if !a.nosession {
+        gtk::glib::timeout_add_seconds_local(30, || {
+            edit::save_session();
+            gtk::glib::ControlFlow::Continue
+        });
+    }
+    update::start();
     gtk::main();
 }

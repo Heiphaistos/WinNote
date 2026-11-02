@@ -4,7 +4,7 @@ use crate::theme::THEMES;
 use crate::ui::{blend, scale};
 use crate::{app, w};
 use std::mem::zeroed;
-use std::ptr::{null, null_mut};
+use std::ptr::null;
 use windows_sys::Win32::{
     Foundation::*,
     Graphics::Gdi::*,
@@ -130,23 +130,7 @@ pub fn show_outline() {
     let text = String::from_utf8_lossy(&buf[..n]).to_string();
     let md = crate::lang::LANGS[a.docs[a.cur].lang].lexer == "markdown";
     let mut stack: Vec<(usize, HTREEITEM)> = Vec::new();
-    let mut in_code = false;
-    for (i, l) in text.lines().enumerate() {
-        let t = l.trim_start();
-        if t.starts_with("```") {
-            in_code = !in_code;
-        }
-        let (level, title) = if md && !in_code && t.starts_with('#') {
-            let lv = t.chars().take_while(|&c| c == '#').count();
-            (lv, t[lv..].trim().to_string())
-        } else if !md && ["fn ", "pub fn ", "def ", "class ", "function ", "func ", "struct ", "impl ", "enum ", "trait ", "interface ", "async fn ", "pub struct "].iter().any(|k| t.starts_with(k)) {
-            (1 + (l.len() - t.len()) / 4, t.trim_end_matches(['{', ':', ' ']).chars().take(80).collect())
-        } else {
-            continue;
-        };
-        if title.is_empty() {
-            continue;
-        }
+    for (level, title, i) in crate::notes::outline(&text, md) {
         while stack.last().is_some_and(|s| s.0 >= level) {
             stack.pop();
         }
@@ -175,28 +159,12 @@ pub fn show_backlinks() {
         nodes().push(Node { path: String::new(), dir: false, loaded: true, line: -1 });
         return;
     };
-    let p = std::path::Path::new(&path);
-    let stem = p.file_stem().map(|s| s.to_string_lossy().to_lowercase()).unwrap_or_default();
-    let base = a.root.clone().map(std::path::PathBuf::from).or_else(|| p.parent().map(|d| d.to_path_buf())).unwrap_or_default();
-    let mut files = Vec::new();
-    crate::palette::walk(&base, &mut files, 0);
-    let pats = [format!("[[{stem}]]"), format!("[[{stem}|"), format!("[[{stem}#")];
-    let mut found = 0;
-    for f in files {
-        let ext = f.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
-        if !matches!(ext.as_str(), "md" | "markdown" | "mdx" | "txt") || f == p {
-            continue;
-        }
-        let Ok(text) = std::fs::read_to_string(&f) else { continue };
-        if let Some((i, l)) = text.lines().enumerate().find(|(_, l)| {
-            let ll = l.to_lowercase();
-            pats.iter().any(|q| ll.contains(q.as_str()))
-        }) {
-            let name = f.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
-            nodes().push(Node { path: f.to_string_lossy().to_string(), dir: false, loaded: true, line: i as isize });
-            insert(0, &format!("{name} : {}", l.trim().chars().take(70).collect::<String>()), nodes().len() - 1, false);
-            found += 1;
-        }
+    let hits = crate::notes::backlinks(&path, a.root.as_deref());
+    let found = hits.len();
+    for (f, i, l) in hits {
+        let name = std::path::Path::new(&f).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+        nodes().push(Node { path: f, dir: false, loaded: true, line: i as isize });
+        insert(0, &format!("{name} : {l}"), nodes().len() - 1, false);
     }
     if found == 0 {
         nodes().push(Node { path: String::new(), dir: false, loaded: true, line: -1 });

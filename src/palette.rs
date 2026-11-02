@@ -63,23 +63,7 @@ fn fuzzy(q: &str, text: &str) -> Option<i32> {
     Some(score)
 }
 
-pub fn walk(root: &std::path::Path, out: &mut Vec<std::path::PathBuf>, depth: u32) {
-    if depth > 6 || out.len() > 5000 {
-        return;
-    }
-    let Ok(rd) = std::fs::read_dir(root) else { return };
-    for e in rd.flatten() {
-        let p = e.path();
-        let name = e.file_name().to_string_lossy().to_string();
-        if p.is_dir() {
-            if !matches!(name.as_str(), ".git" | "node_modules" | "target" | ".logs" | "dist" | "build") {
-                walk(&p, out, depth + 1);
-            }
-        } else {
-            out.push(p);
-        }
-    }
-}
+pub use crate::notes::walk;
 
 fn collect(mode: Mode) -> Vec<Item> {
     let a = app();

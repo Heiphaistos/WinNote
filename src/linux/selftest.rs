@@ -144,6 +144,94 @@ pub fn run(log_path: &str) -> i32 {
     let before = a.docs.len();
     on_command(OPENLINK);
     t.check("lien [[note-x]] : nouvel onglet", &(a.docs.len() - before).to_string(), "1");
+    // ---- panneau latéral, aperçu, vue scindée, lecture seule
+    lang("Markdown");
+    set("# A
+## B
+texte
+# C");
+    crate::side::show(1);
+    t.check("plan : 3 titres", &crate::side::row_count().to_string(), "3");
+    std::fs::write(dir.join("cible.md"), "x").ok();
+    std::fs::write(dir.join("autre.md"), "voir [[cible]] ici
+").ok();
+    std::fs::write(dir.join("rien.md"), "rien
+").ok();
+    edit::open_path(&dir.join("cible.md").to_string_lossy());
+    a.root = Some(dir.to_string_lossy().to_string());
+    t.check("liens entrants : 1 note", &crate::side::backlink_count().to_string(), "1");
+    lang("Markdown");
+    set("# Titre
+**gras** et `code`
+");
+    a.preview = true;
+    crate::view::update_preview();
+    let n = send(a.prev, sci::GETLENGTH, 0, 0) as usize;
+    let mut b = vec![0u8; n + 1];
+    send(a.prev, sci::GETTEXT, n + 1, b.as_mut_ptr() as isize);
+    t.check("aperçu Markdown rendu", String::from_utf8_lossy(&b[..n]).as_ref(), "Titre
+gras et code
+");
+    a.preview = false;
+    a.split = true;
+    crate::view::sync_split();
+    t.check("vue scindée : même document", &(send(a.sci2, 2357, 0, 0) == send(a.sci, 2357, 0, 0)).to_string(), "true");
+    a.split = false;
+    on_command(READONLY);
+    t.check("lecture seule", &send(a.sci, sci::GETREADONLY, 0, 0).to_string(), "1");
+    on_command(READONLY);
+    // ---- orthographe (nécessite Enchant + dictionnaire fr_FR)
+    lang("Texte brut");
+    set("Bonjour le mondde");
+    a.spell = true;
+    if crate::spell::init("fr_FR") {
+        a.spell_lang = "fr_FR".into();
+        crate::spell::check_visible();
+        t.check("orthographe : 1 mot inconnu", &crate::spell::error_count().to_string(), "1");
+        let sug = crate::spell::prepare_at(14);
+        t.check("orthographe : suggestion « monde »", &sug.iter().any(|s| s == "monde").to_string(), "true");
+        crate::spell::apply_fix(sug.iter().position(|s| s == "monde").unwrap_or(0));
+        t.check("orthographe : correction appliquée", &get(), "Bonjour le monde");
+    } else {
+        t.log.push("SKIP orthographe (Enchant ou dictionnaire fr_FR absent)".into());
+    }
+    a.spell = false;
+    crate::spell::check_visible();
+    // ---- impression dans un PDF
+    set(&(1..=300).map(|i| format!("ligne numero {i} avec un texte assez long pour la mise en page")).collect::<Vec<_>>().join("
+"));
+    let pdf = dir.join("sortie.pdf").to_string_lossy().to_string();
+    let r = crate::print::export_pdf(&pdf);
+    t.check("impression PDF : plusieurs pages", &r.as_ref().map_or(false, |&n| n >= 5).to_string(), "true");
+    t.check("impression PDF : fichier valide", &std::fs::read(&pdf).map_or(false, |b| b.starts_with(b"%PDF")).to_string(), "true");
+    // ---- mise à jour : API simulée (file://), empreinte, remplacement
+    {
+        use crate::update;
+        let app_new = dir.join("nouvelle.AppImage");
+        std::fs::write(&app_new, b"#!/bin/sh
+echo v9
+").ok();
+        let sha = update::sha256_file(&app_new.to_string_lossy()).unwrap_or_default();
+        let api = format!("{{\"tag_name\":\"v9.9.9\",\"assets\":[{{\"name\":\"WinNote-9.9.9-x86_64.AppImage\",\"digest\":\"sha256:{sha}\",\"browser_download_url\":\"file://{}\"}}]}}", app_new.display());
+        let api_path = dir.join("api.json");
+        std::fs::write(&api_path, api).ok();
+        std::env::set_var("WINNOTE_UPDATE_URL", format!("file://{}", api_path.display()));
+        let found = update::fetch();
+        t.check("mise à jour : nouvelle version détectée", &found.as_ref().map_or("erreur".into(), |f| f.as_ref().map_or("aucune".into(), |f| f.version.clone())), "v9.9.9");
+        let target = dir.join("WinNote.AppImage");
+        std::fs::write(&target, b"ancienne").ok();
+        if let Ok(Some(f)) = &found {
+            t.check("mise à jour : installation", &update::install(f, &target.to_string_lossy()).is_ok().to_string(), "true");
+            t.check("mise à jour : fichier remplacé", &std::fs::read_to_string(&target).unwrap_or_default(), "#!/bin/sh
+echo v9
+");
+            let bad = update::Found { sha: "0".repeat(64), ..f.clone() };
+            std::fs::write(&target, b"ancienne").ok();
+            t.check("mise à jour : mauvaise empreinte refusée", &update::install(&bad, &target.to_string_lossy()).is_err().to_string(), "true");
+            t.check("mise à jour : ancien fichier intact", &std::fs::read_to_string(&target).unwrap_or_default(), "ancienne");
+        }
+        std::env::remove_var("WINNOTE_UPDATE_URL");
+    }
     let _ = std::fs::remove_dir_all(&dir);
     t.log.push(format!("{} échec(s)", t.fails));
     let _ = std::fs::write(log_path, t.log.join("\n"));

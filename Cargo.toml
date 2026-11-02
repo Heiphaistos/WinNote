@@ -1,13 +1,13 @@
 [package]
 name = "winnote"
-version = "0.5.0"
+version = "0.6.0"
 edition = "2021"
 description = "WinNote : editeur de texte natif 64 bits, leger (Windows 10/11 et Linux)"
 default-run = "winnote"
 
 [features]
 # Interface Linux (GTK3). A activer uniquement sous Linux : cargo build --release --features gtk-ui --bin winnote-gtk
-gtk-ui = ["dep:gtk"]
+gtk-ui = ["dep:gtk", "dep:pangocairo"]
 
 [[bin]]
 name = "winnote"
@@ -32,6 +32,7 @@ features = ["Win32_Globalization", "Win32_System_Com"]
 
 [target.'cfg(unix)'.dependencies]
 gtk = { version = "0.18", optional = true }
+pangocairo = { version = "0.18", optional = true }
 
 [build-dependencies]
 cc = "1"

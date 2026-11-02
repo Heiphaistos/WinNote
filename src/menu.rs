@@ -5,7 +5,7 @@ use crate::lang::LANGS;
 use crate::theme::{LAYOUTS, THEMES};
 use crate::{app, w, App};
 use std::ptr::null;
-use windows_sys::Win32::{Foundation::*, UI::Input::KeyboardAndMouse::*, UI::WindowsAndMessaging::*};
+use windows_sys::Win32::{UI::Input::KeyboardAndMouse::*, UI::WindowsAndMessaging::*};
 
 pub struct Menus {
     pub bar: HMENU,

@@ -7,7 +7,9 @@ mod ids;
 mod lang;
 mod mdpreview;
 mod menu;
+mod mdrender;
 mod menubar;
+mod notes;
 mod palette;
 mod print;
 mod selftest;
@@ -21,6 +23,7 @@ mod textops;
 mod theme;
 mod ui;
 mod updater;
+mod vers;
 
 use doc::Doc;
 use std::ptr::{null, null_mut};

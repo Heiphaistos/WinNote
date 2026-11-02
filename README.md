@@ -29,5 +29,6 @@ Linux : la version native utilise GTK3 (présent sur tous les bureaux courants) 
 - Windows : `cargo build --release` (Rust MSVC + Visual Studio Build Tools) ; version complète : `scripts\publier-release.ps1`.
 - Linux : `cargo build --release --features gtk-ui --bin winnote-gtk` (nécessite `libgtk-3-dev`, `pkg-config`, g++) puis `scripts/package-linux.sh`.
 
-## Licences
-Voir `THIRD_PARTY_NOTICES.md` (Scintilla et Lexilla).
+## Licence
+WinNote est sous **PolyForm Noncommercial 1.0.0** (fichier `LICENSE`) : code source ouvert et modifiable, usage libre et gratuit, **mais pas de revente ni d'usage commercial** (seul l'auteur peut vendre le projet). Ce n'est donc pas une licence « open source » au sens strict de l'OSI, qui interdirait de restreindre la revente.
+Composants tiers : `THIRD_PARTY_NOTICES.md` (Scintilla et Lexilla).
