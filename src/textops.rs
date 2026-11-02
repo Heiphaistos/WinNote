@@ -2,13 +2,13 @@
 use crate::cmds::{msg_box, open_or_create};
 use crate::lang::LANGS;
 use crate::sci::{self, send};
-use crate::{app, w};
+use crate::app;
 
-fn eol_str(s: windows_sys::Win32::Foundation::HWND) -> &'static str {
+fn eol_str(s: crate::sci::HWND) -> &'static str {
     match send(s, sci::GETEOLMODE, 0, 0) { 0 => "\r\n", 1 => "\r", _ => "\n" }
 }
 
-fn range_text(s: windows_sys::Win32::Foundation::HWND, a: isize, b: isize) -> String {
+fn range_text(s: crate::sci::HWND, a: isize, b: isize) -> String {
     let mut buf = vec![0u8; (b - a) as usize + 1];
     // SCI_GETTEXTRANGEFULL (2039) avec Sci_TextRangeFull { Sci_CharacterRangeFull chrg{a,b}; char* lpstrText }
     let mut tr: [isize; 3] = [a, b, buf.as_mut_ptr() as isize];
@@ -200,9 +200,16 @@ pub fn stats() {
     msg_box(&msg);
 }
 
+#[cfg(windows)]
 fn open_url(u: &str) {
     use windows_sys::Win32::UI::{Shell::ShellExecuteW, WindowsAndMessaging::SW_SHOWNORMAL};
+    let w = |s: &str| -> Vec<u16> { s.encode_utf16().chain(Some(0)).collect() };
     unsafe { ShellExecuteW(std::ptr::null_mut(), w("open").as_ptr(), w(u).as_ptr(), std::ptr::null(), std::ptr::null(), SW_SHOWNORMAL) };
+}
+
+#[cfg(unix)]
+fn open_url(u: &str) {
+    let _ = std::process::Command::new("xdg-open").arg(u).spawn();
 }
 
 /// Ouvre le lien [[note]], l'URL ou le chemin sous le curseur.

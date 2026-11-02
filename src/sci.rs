@@ -1,15 +1,30 @@
 //! Fine couche sur Scintilla (messages Win32) + liaison C vers Scintilla/Lexilla statiques.
 #![allow(dead_code)]
 use std::ffi::c_void;
-use windows_sys::Win32::{Foundation::HWND, UI::WindowsAndMessaging::SendMessageW};
+#[cfg(windows)]
+pub use windows_sys::Win32::Foundation::HWND;
+#[cfg(windows)]
+use windows_sys::Win32::UI::WindowsAndMessaging::SendMessageW;
+/// Poignée d'une vue Scintilla : GtkWidget* sous Linux.
+#[cfg(unix)]
+pub type HWND = *mut c_void;
 
 extern "C" {
+    #[cfg(windows)]
     pub fn Scintilla_RegisterClasses(h: *mut c_void) -> i32;
+    #[cfg(unix)]
+    fn scintilla_object_send_message(sci: *mut c_void, msg: u32, w: usize, l: isize) -> isize;
     pub fn CreateLexer(name: *const u8) -> *mut c_void;
 }
 
+#[cfg(windows)]
 pub fn send(h: HWND, m: u32, w: usize, l: isize) -> isize {
     unsafe { SendMessageW(h, m, w, l) }
+}
+
+#[cfg(unix)]
+pub fn send(h: HWND, m: u32, w: usize, l: isize) -> isize {
+    unsafe { scintilla_object_send_message(h, m, w, l) }
 }
 
 pub const GETLENGTH: u32 = 2006;

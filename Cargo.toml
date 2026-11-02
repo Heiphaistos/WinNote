@@ -1,10 +1,24 @@
 [package]
 name = "winnote"
-version = "0.4.0"
+version = "0.5.0"
 edition = "2021"
-description = "WinNote : éditeur de texte natif Windows 64 bits, léger (Bloc-notes + Notepad++)"
+description = "WinNote : editeur de texte natif 64 bits, leger (Windows 10/11 et Linux)"
+default-run = "winnote"
 
-[dependencies]
+[features]
+# Interface Linux (GTK3). A activer uniquement sous Linux : cargo build --release --features gtk-ui --bin winnote-gtk
+gtk-ui = ["dep:gtk"]
+
+[[bin]]
+name = "winnote"
+path = "src/main.rs"
+
+[[bin]]
+name = "winnote-gtk"
+path = "src/linux/main.rs"
+required-features = ["gtk-ui"]
+
+[target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = [
   "Win32_Foundation", "Win32_Graphics_Gdi", "Win32_Graphics_Dwm", "Win32_System_LibraryLoader",
   "Win32_System_Registry", "Win32_UI_Controls", "Win32_UI_Controls_Dialogs", "Win32_UI_HiDpi",
@@ -12,8 +26,17 @@ windows-sys = { version = "0.59", features = [
   "Win32_Storage_FileSystem", "Win32_Globalization", "Win32_Storage_Xps", "Win32_System_Kernel", "Win32_System_Diagnostics_Debug", "Win32_Networking_WinHttp", "Win32_Security_Cryptography", "Win32_System_DataExchange", "Win32_System_Com", "Win32_System_SystemInformation", "Win32_System_Memory", "Win32_System_Ole",
 ] }
 
+[target.'cfg(windows)'.dependencies.windows]
+version = "0.58"
+features = ["Win32_Globalization", "Win32_System_Com"]
+
+[target.'cfg(unix)'.dependencies]
+gtk = { version = "0.18", optional = true }
+
 [build-dependencies]
 cc = "1"
+
+[target.'cfg(windows)'.build-dependencies]
 embed-resource = "3"
 
 [profile.release]
@@ -22,7 +45,3 @@ lto = true
 codegen-units = 1
 panic = "abort"
 strip = true
-
-[dependencies.windows]
-version = "0.58"
-features = ["Win32_Globalization", "Win32_System_Com"]

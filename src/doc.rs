@@ -1,4 +1,5 @@
 //! Document : encodage (détection/conversion) et état d'un onglet.
+#[cfg(windows)]
 use windows_sys::Win32::Globalization::{MultiByteToWideChar, WideCharToMultiByte};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -34,6 +35,7 @@ impl Doc {
     }
 }
 
+#[cfg(windows)]
 fn ansi_to_utf8(b: &[u8]) -> Vec<u8> {
     if b.is_empty() { return Vec::new(); }
     unsafe {
@@ -44,6 +46,7 @@ fn ansi_to_utf8(b: &[u8]) -> Vec<u8> {
     }
 }
 
+#[cfg(windows)]
 fn utf8_to_ansi(b: &[u8]) -> Vec<u8> {
     let w: Vec<u16> = String::from_utf8_lossy(b).encode_utf16().collect();
     if w.is_empty() { return Vec::new(); }
@@ -53,6 +56,27 @@ fn utf8_to_ansi(b: &[u8]) -> Vec<u8> {
         WideCharToMultiByte(0, 0, w.as_ptr(), w.len() as i32, o.as_mut_ptr(), n, std::ptr::null(), std::ptr::null_mut());
         o
     }
+}
+
+/// Windows-1252 (page de code « ANSI » usuelle) : table des 0x80..0x9F, le reste = Latin-1.
+#[cfg(unix)]
+const CP1252: [char; 32] = ['\u{20AC}', '\u{81}', '\u{201A}', '\u{192}', '\u{201E}', '\u{2026}', '\u{2020}', '\u{2021}', '\u{2C6}', '\u{2030}', '\u{160}', '\u{2039}', '\u{152}', '\u{8D}', '\u{17D}', '\u{8F}',
+    '\u{90}', '\u{2018}', '\u{2019}', '\u{201C}', '\u{201D}', '\u{2022}', '\u{2013}', '\u{2014}', '\u{2DC}', '\u{2122}', '\u{161}', '\u{203A}', '\u{153}', '\u{9D}', '\u{17E}', '\u{178}'];
+
+#[cfg(unix)]
+fn ansi_to_utf8(b: &[u8]) -> Vec<u8> {
+    b.iter().map(|&c| if (0x80..0xA0).contains(&c) { CP1252[(c - 0x80) as usize] } else { c as char }).collect::<String>().into_bytes()
+}
+
+#[cfg(unix)]
+fn utf8_to_ansi(b: &[u8]) -> Vec<u8> {
+    String::from_utf8_lossy(b)
+        .chars()
+        .map(|c| match c as u32 {
+            0..=0x7F | 0xA0..=0xFF => c as u8,
+            _ => CP1252.iter().position(|&x| x == c).map_or(b'?', |i| 0x80 + i as u8),
+        })
+        .collect()
 }
 
 fn utf16(b: &[u8], be: bool) -> Vec<u8> {

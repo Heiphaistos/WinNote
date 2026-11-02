@@ -1,0 +1,26 @@
+# Maintainer: Heiphaistos
+pkgname=winnote
+pkgver=0.5.0
+pkgrel=1
+pkgdesc='Editeur de texte leger : onglets, themes, coloration, recherche regex, palette de commandes (GTK3, moteur Scintilla)'
+arch=('x86_64')
+url='https://github.com/Heiphaistos/WinNote'
+license=('custom')
+depends=('gtk3')
+makedepends=('rust' 'cargo' 'pkgconf' 'gcc')
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+build() {
+  cd "WinNote-$pkgver"
+  cargo build --release --features gtk-ui --bin winnote-gtk
+}
+
+package() {
+  cd "WinNote-$pkgver"
+  install -Dm755 target/release/winnote-gtk "$pkgdir/usr/bin/winnote"
+  install -Dm644 assets/winnote.desktop "$pkgdir/usr/share/applications/winnote.desktop"
+  install -Dm644 assets/winnote.png "$pkgdir/usr/share/icons/hicolor/256x256/apps/winnote.png"
+  install -Dm644 THIRD_PARTY_NOTICES.md "$pkgdir/usr/share/licenses/$pkgname/THIRD_PARTY_NOTICES.md"
+  install -Dm644 vendor/scintilla/License.txt "$pkgdir/usr/share/licenses/$pkgname/SCINTILLA-License.txt"
+}

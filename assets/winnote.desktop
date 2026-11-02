@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=WinNote
+GenericName=Éditeur de texte
+Comment=Éditeur de texte léger : onglets, thèmes, coloration, recherche, palette de commandes
+Exec=winnote %F
+Icon=winnote
+Terminal=false
+Categories=Utility;TextEditor;Development;
+MimeType=text/plain;text/markdown;text/x-csrc;text/x-chdr;text/x-c++src;text/x-python;text/x-rust;text/html;text/css;text/xml;application/json;application/x-shellscript;text/x-log;
+Keywords=texte;éditeur;notepad;bloc-notes;markdown;code;
+StartupNotify=true
