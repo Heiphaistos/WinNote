@@ -228,18 +228,26 @@ unsafe fn on_timer(a: &mut App, id: usize) {
     }
 }
 
+static PROMPTING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 unsafe fn on_update_msg(a: &mut App, m: u32, lp: LPARAM) {
     match m {
         updater::WM_UPD_FOUND => {
             let f = *Box::from_raw(lp as *mut updater::Found);
+            if PROMPTING.swap(true, std::sync::atomic::Ordering::SeqCst) {
+                return; // une proposition est deja affichee (verification auto + manuelle simultanees)
+            }
             let q = format!("WinNote {} est disponible (version actuelle {}).\nTélécharger et installer maintenant ? WinNote redémarrera.", f.version, env!("CARGO_PKG_VERSION"));
-            if MessageBoxW(a.hwnd, w(&q).as_ptr(), w("Mise à jour").as_ptr(), MB_YESNO | MB_ICONINFORMATION) == IDYES {
+            let yes = MessageBoxW(a.hwnd, w(&q).as_ptr(), w("Mise à jour").as_ptr(), MB_YESNO | MB_ICONINFORMATION) == IDYES;
+            PROMPTING.store(false, std::sync::atomic::Ordering::SeqCst);
+            if yes {
                 updater::download(f);
             }
         }
         updater::WM_UPD_NONE => {
-            if *Box::from_raw(lp as *mut bool) {
-                cmds::msg_box("Aucune mise à jour trouvée : WinNote est à jour (ou aucune version publique n'est disponible).");
+            let (manual, msg) = *Box::from_raw(lp as *mut (bool, String));
+            if manual {
+                cmds::msg_box(&msg);
             }
         }
         _ => match *Box::from_raw(lp as *mut Result<String, String>) {
@@ -451,6 +459,16 @@ fn main() {
     if let Some(i) = args.iter().position(|a| a == "--apply-update") {
         // mode sans fenêtre : remplace l'exe par le fichier indiqué puis relance (utilisé par la mise à jour et ses tests)
         std::process::exit(args.get(i + 1).map_or(2, |f| updater::apply(f).is_err() as i32));
+    }
+    if let Some(i) = args.iter().position(|a| a == "--update-check") {
+        // mode sans fenetre (diagnostic) : ecrit le resultat de la verification dans le fichier indique
+        let r = match updater::fetch() {
+            Ok(Some(f)) => format!("nouvelle version {} url={} sha={}", f.version, f.url, f.sha),
+            Ok(None) => "a jour".to_string(),
+            Err(e) => format!("erreur : {e}"),
+        };
+        let _ = std::fs::write(args.get(i + 1).map_or("update-check.txt", |s| s.as_str()), r);
+        std::process::exit(0);
     }
     updater::cleanup();
     unsafe {
