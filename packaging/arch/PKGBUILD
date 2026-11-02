@@ -1,12 +1,13 @@
 # Maintainer: Heiphaistos
 pkgname=winnote
-pkgver=0.5.0
+pkgver=0.6.0
 pkgrel=1
 pkgdesc='Editeur de texte leger : onglets, themes, coloration, recherche regex, palette de commandes (GTK3, moteur Scintilla)'
 arch=('x86_64')
 url='https://github.com/Heiphaistos/WinNote'
 license=('LicenseRef-PolyForm-Noncommercial-1.0.0')
 depends=('gtk3')
+optdepends=('enchant: correcteur orthographique' 'hunspell-fr: dictionnaire francais' 'curl: recherche de mises a jour')
 makedepends=('rust' 'cargo' 'pkgconf' 'gcc')
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
 sha256sums=('SKIP')

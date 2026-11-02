@@ -42,17 +42,19 @@ Section: editors
 Priority: optional
 Architecture: amd64
 Depends: libgtk-3-0, libc6 (>= 2.35)
+Recommends: libenchant-2-2, hunspell-fr | hunspell-en-us, curl
 Installed-Size: $size
 Maintainer: Heiphaistos <noreply@users.noreply.github.com>
 Homepage: https://github.com/Heiphaistos/WinNote
 Description: editeur de texte leger (GTK3, moteur Scintilla)
- Onglets, themes, coloration de 45 langages, recherche regex, palette de commandes, session restauree.
+ Onglets, themes, coloration de 45 langages, recherche regex, palette de commandes, session restauree,
+ panneau lateral, apercu Markdown, vue scindee, correcteur orthographique, impression.
 EOC
 dpkg-deb --build --root-owner-group "$d" "$out/winnote_${ver}_amd64.deb" >/dev/null
 
 # ---- .rpm
 top="$abs/rpmbuild"; mkdir -p "$top"/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
-cp "$bin" "$top/SOURCES/winnote"; cp assets/winnote.desktop assets/winnote.png README.md "$top/SOURCES/"
+cp "$bin" "$top/SOURCES/winnote"; cp assets/winnote.desktop assets/winnote.png README.md LICENSE "$top/SOURCES/"
 cat > "$top/SPECS/winnote.spec" <<EOR
 Name: winnote
 Version: $ver
@@ -61,6 +63,7 @@ Summary: Editeur de texte leger (GTK3, moteur Scintilla)
 License: PolyForm-Noncommercial-1.0.0 AND HPND
 URL: https://github.com/Heiphaistos/WinNote
 Requires: gtk3
+Recommends: enchant2, hunspell-fr, curl
 AutoReqProv: no
 %description
 Onglets, themes, coloration de 45 langages, recherche regex, palette de commandes, session restauree.
@@ -68,10 +71,12 @@ Onglets, themes, coloration de 45 langages, recherche regex, palette de commande
 install -Dm755 %{_sourcedir}/winnote %{buildroot}/usr/bin/winnote
 install -Dm644 %{_sourcedir}/winnote.desktop %{buildroot}/usr/share/applications/winnote.desktop
 install -Dm644 %{_sourcedir}/winnote.png %{buildroot}/usr/share/icons/hicolor/256x256/apps/winnote.png
+install -Dm644 %{_sourcedir}/LICENSE %{buildroot}/usr/share/licenses/winnote/LICENSE
 %files
 /usr/bin/winnote
 /usr/share/applications/winnote.desktop
 /usr/share/icons/hicolor/256x256/apps/winnote.png
+/usr/share/licenses/winnote/LICENSE
 EOR
 rpmbuild -bb --define "_topdir $top" --define "debug_package %{nil}" --define "__strip /bin/true" "$top/SPECS/winnote.spec" >/dev/null 2>&1
 cp "$top"/RPMS/*/winnote-*.rpm "$out/"
@@ -86,11 +91,18 @@ HERE="$(dirname "$(readlink -f "$0")")"
 exec "$HERE/usr/bin/winnote" "$@"
 EOA
 chmod +x "$ad/AppRun"
-# L'outil officiel appimagetool n'est PAS telecharge automatiquement : fournir son chemin (verifie) via APPIMAGETOOL=/chemin/appimagetool
-if [ -n "$APPIMAGETOOL" ] && [ -x "$APPIMAGETOOL" ]; then
-  ARCH=x86_64 "$APPIMAGETOOL" --appimage-extract-and-run "$ad" "$out/WinNote-$ver-x86_64.AppImage" >/dev/null 2>&1
-else
-  echo "AppImage ignoree : definir APPIMAGETOOL (outil officiel https://github.com/AppImage/appimagetool a verifier)"
+# appimagetool officiel (https://github.com/AppImage/appimagetool, release "continuous") : telecharge puis VERIFIE par son SHA-256 epingle.
+# Si l'empreinte change (nouvelle version de l'outil), le script s'arrete : verifier l'empreinte publiee par GitHub puis mettre a jour la ligne ci-dessous.
+want=62aebc77c2149e96b593b94da9bbd1881e0984a56399ff6d7a03b7ddd7c9ce68
+tool=${APPIMAGETOOL:-target/tools/appimagetool-x86_64.AppImage}
+if [ ! -x "$tool" ]; then
+  mkdir -p "$(dirname "$tool")"
+  curl -fsSL -o "$tool" https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+  chmod +x "$tool"
 fi
+if [ -z "$APPIMAGETOOL" ] && [ "$(sha256sum "$tool" | cut -d' ' -f1)" != "$want" ]; then
+  echo "appimagetool : empreinte inattendue, AppImage non fabriquee"; rm -f "$tool"; exit 1
+fi
+ARCH=x86_64 "$tool" --appimage-extract-and-run "$ad" "$out/WinNote-$ver-x86_64.AppImage" >/dev/null 2>&1
 
 ls -la "$out"/*.tar.gz "$out"/*.deb "$out"/*.rpm "$out"/*.AppImage 2>/dev/null
