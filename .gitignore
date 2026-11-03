@@ -4,3 +4,10 @@ dist/
 *.log
 .env
 !vendor/
+.env.*
+*.pem
+*.key
+build/
+__pycache__/
+.vscode/
+.idea/
