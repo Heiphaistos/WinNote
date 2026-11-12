@@ -1,6 +1,6 @@
 [package]
 name = "winnote"
-version = "0.6.0"
+version = "0.6.1"
 edition = "2021"
 description = "WinNote : editeur de texte natif 64 bits, leger (Windows 10/11 et Linux)"
 default-run = "winnote"

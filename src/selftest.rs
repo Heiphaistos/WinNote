@@ -285,6 +285,38 @@ autre").unwrap();
     send(a.sci, sci::SETSEL, send(a.sci, sci::GETCURRENTPOS, 0, 0) as usize, send(a.sci, sci::GETCURRENTPOS, 0, 0));
     t.check("indentation automatique après Entrée", &send(a.sci, 2127, 1, 0).to_string(), "4");
 
+    // ----- Markdown en direct -----
+    cmds::new_doc(a);
+    lang("Markdown");
+    set("# Titre\n**gras** et *it* et `c`\n- x");
+    crate::mdlive::style_doc();
+    let sty = |p: usize| send(a.sci, 2010, p, 0).to_string();
+    t.check("Markdown direct : titre H1", &sty(3), "1");
+    t.check("Markdown direct : gras", &sty(12), "7");
+    t.check("Markdown direct : italique", &sty(21), "8");
+    t.check("Markdown direct : code", &sty(29), "10");
+    t.check("Markdown direct : puce", &sty(32), "15");
+    cmds::new_doc(a);
+    lang("Texte brut");
+    set("bonjour\n\n## Un titre\n");
+    crate::mdlive::on_timer();
+    t.check("document sans nom : passe seul en Markdown", LANGS[a.docs[a.cur].lang].name, "Markdown");
+
+    // ----- tous les langages : lexer chargé + au moins un octet coloré sur un échantillon -----
+    for (i, l) in LANGS.iter().enumerate() {
+        if l.lexer.is_empty() || l.lexer == "markdown" {
+            continue;
+        }
+        cmds::new_doc(a);
+        lang(l.name);
+        let kw = l.kw.iter().flat_map(|k| k.split_whitespace()).next().unwrap_or("x");
+        set(&format!("{kw} a = 42 \"s\" 'c' // c\n# c\n-- c\n/* c */ {kw}\n<a b=\"c\"> [s] x: 1\n\\section{{a}} % c\n"));
+        send(a.sci, sci::COLOURISE, 0, -1);
+        let n = send(a.sci, sci::GETLENGTH, 0, 0) as usize;
+        let styled = (0..n).any(|p| send(a.sci, 2010, p, 0) != 0);
+        t.check_bool(&format!("langage {i} « {} » : coloré", l.name), styled);
+    }
+
     // ----- fins de ligne -----
     set("a\r\nb");
     cmds::on_command(EOL + 2);

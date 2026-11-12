@@ -27,8 +27,12 @@ pub fn msg_box(s: &str) {
 fn set_lexer(a: &App, lang: usize) {
     let l = &LANGS[lang];
     unsafe {
-        if l.lexer.is_empty() {
+        if l.lexer.is_empty() || l.lexer == "markdown" {
+            // Markdown : pas de Lexilla, styles posés par mdlive (titres agrandis, gras, italique...)
             send(a.sci, sci::SETILEXER, 0, 0);
+            if !l.lexer.is_empty() {
+                crate::mdlive::style_doc();
+            }
         } else {
             let p = crate::sci::CreateLexer(cstr(l.lexer).as_ptr());
             send(a.sci, sci::SETILEXER, 0, p as isize);
@@ -41,6 +45,20 @@ fn set_lexer(a: &App, lang: usize) {
         }
     }
     send(a.sci, sci::COLOURISE, 0, -1);
+}
+
+/// Change le langage du document courant (menu Langage, ou détection auto du Markdown).
+pub fn set_language(lang: usize) {
+    let a = app();
+    if a.docs.is_empty() || lang >= LANGS.len() {
+        return;
+    }
+    a.docs[a.cur].lang = lang;
+    set_lexer(a, lang);
+    style_editor(a);
+    crate::sidebar::refresh();
+    crate::mdpreview::update();
+    refresh();
 }
 
 fn style_editor(a: &App) {
@@ -68,7 +86,9 @@ fn style_view(a: &App, s: HWND) {
     send(s, sci::SETCARETLINEVIS, 1, 0);
     send(s, sci::SETCARETLINEBACK, t.line as usize, 0);
     send(s, sci::SETWSFORE, 1, t.gutter as isize);
-    if let Some(d) = a.docs.get(a.cur) {
+    if a.docs.get(a.cur).is_some_and(|d| LANGS[d.lang].lexer == "markdown") {
+        crate::mdlive::attrs(s, t, a.size, [180, 150, 130, 115, 105, 100]);
+    } else if let Some(d) = a.docs.get(a.cur) {
         for &(st, cls) in LANGS[d.lang].map {
             send(s, sci::STYLESETFORE, st as usize, t.color(cls) as isize);
             send(s, sci::STYLESETBOLD, st as usize, matches!(cls, Cls::Head | Cls::Strong) as isize);
@@ -834,14 +854,7 @@ pub fn on_command(id: usize) {
             a.docs[a.cur].enc = Enc::ALL[id - ENC];
             refresh();
         }
-        300..=399 if id - LANG < LANGS.len() => {
-            a.docs[a.cur].lang = id - LANG;
-            set_lexer(a, id - LANG);
-            style_editor(a);
-            crate::sidebar::refresh();
-            crate::mdpreview::update();
-            refresh();
-        }
+        300..=399 if id - LANG < LANGS.len() => set_language(id - LANG),
         400..=499 if id - THEME < THEMES.len() => {
             a.theme = id - THEME;
             apply_all(a);

@@ -122,6 +122,139 @@ pub fn render(md: &str) -> Vec<(char, u8)> {
 }
 
 
+// ---------- Style en direct dans l'éditeur (un style par octet, marqueurs atténués) ----------
+
+fn find(t: &[u8], from: usize, pat: &[u8]) -> Option<usize> {
+    (from..t.len().checked_sub(pat.len() - 1)?).find(|&j| &t[j..j + pat.len()] == pat)
+}
+
+fn inline_live(t: &[u8], out: &mut [u8], base: u8) {
+    out.fill(base);
+    let mut i = 0;
+    while i < t.len() {
+        let c = t[i];
+        if c == 92 && i + 1 < t.len() {
+            i += 2;
+            continue;
+        }
+        if (c == b'*' || c == b'_') && t.get(i + 1) == Some(&c) {
+            if let Some(e) = find(t, i + 2, &[c, c]).filter(|&e| e > i + 2) {
+                out[i..i + 2].fill(DIM);
+                out[e..e + 2].fill(DIM);
+                inline_live(&t[i + 2..e], &mut out[i + 2..e], if base == ITAL { BOLDITAL } else { BOLD });
+                i = e + 2;
+                continue;
+            }
+        }
+        if (c == b'*' || c == b'_') && t.get(i + 1).is_some_and(|x| !x.is_ascii_whitespace()) && !(c == b'_' && i > 0 && t[i - 1].is_ascii_alphanumeric()) {
+            if let Some(e) = find(t, i + 1, &[c]).filter(|&e| e > i + 1 && !t[e - 1].is_ascii_whitespace()) {
+                out[i] = DIM;
+                out[e] = DIM;
+                inline_live(&t[i + 1..e], &mut out[i + 1..e], if base == BOLD { BOLDITAL } else { ITAL });
+                i = e + 1;
+                continue;
+            }
+        }
+        if c == b'~' && t.get(i + 1) == Some(&b'~') {
+            if let Some(e) = find(t, i + 2, b"~~").filter(|&e| e > i + 2) {
+                out[i..e + 2].fill(DIM);
+                i = e + 2;
+                continue;
+            }
+        }
+        if c == b'`' {
+            if let Some(e) = find(t, i + 1, b"`").filter(|&e| e > i + 1) {
+                out[i] = DIM;
+                out[e] = DIM;
+                out[i + 1..e].fill(CODE);
+                i = e + 1;
+                continue;
+            }
+        }
+        if c == b'[' || (c == b'!' && t.get(i + 1) == Some(&b'[')) {
+            let st = if c == b'!' { i + 2 } else { i + 1 };
+            if let Some(e) = find(t, st, b"]") {
+                let end = if t.get(e + 1) == Some(&b'(') { find(t, e + 2, b")").map(|x| x + 1) } else if t.get(st) == Some(&b'[') && t.get(e + 1) == Some(&b']') { Some(e + 2) } else { None };
+                if let Some(end) = end {
+                    out[i..end].fill(LINK);
+                    if t.get(e + 1) == Some(&b'(') {
+                        out[e + 1..end].fill(DIM);
+                    }
+                    i = end;
+                    continue;
+                }
+            }
+        }
+        if t[i..].starts_with(b"http://") || t[i..].starts_with(b"https://") {
+            let e = t[i..].iter().position(|x| x.is_ascii_whitespace() || *x == b')' || *x == b'>').map_or(t.len(), |p| i + p);
+            out[i..e].fill(LINK);
+            i = e;
+            continue;
+        }
+        i += 1;
+    }
+}
+
+/// Markdown -> style par octet (mêmes ids que l'aperçu : 1..6 titres, BOLD, ITAL, CODE...). Les marqueurs (#, **, `) sont atténués (DIM).
+pub fn live(src: &str) -> Vec<u8> {
+    let mut st = vec![N; src.len()];
+    let (mut pos, mut in_code) = (0, false);
+    for line in src.split_inclusive(char::from(10)) {
+        let l = line.trim_end_matches([char::from(10), char::from(13)]);
+        let (b, s) = (l.as_bytes(), &mut st[pos..pos + l.len()]);
+        let t = l.trim_start();
+        let ind = l.len() - t.len();
+        let tb = t.as_bytes();
+        let hashes = tb.iter().take_while(|&&c| c == b'#').count();
+        if t.starts_with("```") || t.starts_with("~~~") {
+            in_code = !in_code;
+            s.fill(DIM);
+        } else if in_code {
+            s.fill(CODEBLK);
+        } else if (1..=6).contains(&hashes) && (tb.len() == hashes || tb[hashes] == b' ') {
+            s.fill(hashes as u8);
+            s[ind..ind + hashes].fill(DIM);
+        } else if let Some(r) = t.strip_prefix('>') {
+            s[ind] = DIM;
+            let from = ind + 1;
+            inline_live(&b[from..], &mut s[from..], QUOTE);
+            let _ = r;
+        } else if t.len() >= 3 && t.chars().all(|c| matches!(c, '-' | '*' | '_' | ' ')) && t.chars().filter(|c| !c.is_whitespace()).count() >= 3 {
+            s.fill(DIM);
+        } else {
+            let digits = tb.iter().take_while(|c| c.is_ascii_digit()).count();
+            let mark = if matches!(tb.first(), Some(b'-' | b'*' | b'+')) && tb.get(1) == Some(&b' ') {
+                1
+            } else if digits > 0 && matches!(tb.get(digits), Some(b'.' | b')')) && tb.get(digits + 1) == Some(&b' ') {
+                digits + 1
+            } else {
+                0
+            };
+            let mut from = 0;
+            if mark > 0 {
+                s[ind..ind + mark].fill(BULLET);
+                from = ind + mark;
+                let rest = t[mark..].trim_start();
+                let off = from + (t.len() - mark - rest.len());
+                if ["[ ]", "[x]", "[X]"].iter().any(|p| rest.starts_with(p)) {
+                    s[off..off + 3].fill(BULLET);
+                    from = off + 3;
+                }
+            }
+            inline_live(&b[from..], &mut s[from..], N);
+            if t.starts_with('|') {
+                for (i, &c) in b.iter().enumerate() {
+                    if c == b'|' {
+                        s[i] = DIM;
+                    }
+                }
+            }
+        }
+        pos += line.len();
+    }
+    st
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -131,5 +264,29 @@ mod tests {
         assert!(s.contains("Titre") && s.contains("gras et code") && s.contains("• item"), "{s}");
         assert_eq!(r[0].1, 1);
         assert!(r.iter().any(|x| x.1 == super::BOLD) && r.iter().any(|x| x.1 == super::CODE));
+    }
+
+    #[test]
+    fn live_styles() {
+        let src = "### Titre
+Un **gras** et *it* `c` [l](u)
+- a
+> q
+```
+x
+```
+";
+        let s = super::live(src);
+        assert_eq!(s.len(), src.len());
+        assert_eq!(s[0], super::DIM);
+        assert_eq!(s[5], 3);
+        let at = |w: &str| s[src.find(w).unwrap()];
+        assert_eq!(at("gras"), super::BOLD);
+        assert_eq!(at("it*"), super::ITAL);
+        assert_eq!(at("c`"), super::CODE);
+        assert_eq!(at("l]"), super::LINK);
+        assert_eq!(at("- a"), super::BULLET);
+        assert_eq!(at("x"), super::CODEBLK);
+        assert_eq!(super::live("é **b**é").len(), "é **b**é".len());
     }
 }

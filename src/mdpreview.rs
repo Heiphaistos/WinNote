@@ -6,7 +6,7 @@ use crate::{app, cstr, w};
 use std::ptr::null;
 use windows_sys::Win32::{Foundation::*, System::LibraryLoader::GetModuleHandleW, UI::WindowsAndMessaging::*};
 
-use crate::mdrender::{render, BOLD, BOLDITAL, BULLET, CODE, CODEBLK, DIM, ITAL, LINK, QUOTE};
+use crate::mdrender::{render, DIM};
 
 pub fn width() -> i32 {
     let a = app();
@@ -52,31 +52,7 @@ pub fn restyle() {
     send(p, sci::STYLESETFORE, sci::STYLE_DEFAULT, t.fg as isize);
     send(p, sci::STYLESETBACK, sci::STYLE_DEFAULT, blend(t.bg, t.ui_bg, 18) as isize);
     send(p, sci::STYLECLEARALL, 0, 0);
-    let set = |st: usize, fore: u32, bold: bool, ital: bool, sz: i32| {
-        send(p, sci::STYLESETFORE, st, fore as isize);
-        send(p, sci::STYLESETBOLD, st, bold as isize);
-        send(p, sci::STYLESETITALIC, st, ital as isize);
-        if sz != 0 {
-            send(p, sci::STYLESETSIZE, st, sz as isize);
-        }
-    };
-    for (i, m) in [200, 165, 140, 120, 108, 100].iter().enumerate() {
-        set(i + 1, t.accent, true, false, size * m / 100);
-    }
-    set(BOLD as usize, t.fg, true, false, 0);
-    set(ITAL as usize, t.fg, false, true, 0);
-    set(BOLDITAL as usize, t.fg, true, true, 0);
-    set(CODE as usize, t.c[1], false, false, 0);
-    set(CODEBLK as usize, t.c[1], false, false, 0);
-    set(QUOTE as usize, blend(t.fg, t.bg, 30), false, true, 0);
-    set(LINK as usize, t.accent, false, false, 0);
-    send(p, 2059, LINK as usize, 1); // SCI_STYLESETUNDERLINE
-    set(DIM as usize, blend(t.fg, t.bg, 55), false, false, 0);
-    set(BULLET as usize, t.accent, true, false, 0);
-    for st in [CODE, CODEBLK] {
-        send(p, sci::STYLESETFONT, st as usize, cstr("Consolas").as_ptr() as isize);
-        send(p, sci::STYLESETBACK, st as usize, blend(t.bg, t.fg, 8) as isize);
-    }
+    crate::mdlive::attrs(p, t, size, [200, 165, 140, 120, 108, 100]);
     let m = scale(28) as isize;
     send(p, sci::SETMARGINLEFT, 0, m);
     send(p, sci::SETMARGINRIGHT, 0, m);

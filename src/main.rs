@@ -11,6 +11,7 @@ mod mdrender;
 mod menubar;
 mod notes;
 mod palette;
+mod mdlive;
 mod print;
 mod selftest;
 mod sci;
@@ -210,6 +211,7 @@ unsafe fn on_notify(a: &mut App, lp: LPARAM) {
             let mt = *(hdr.add(40) as *const i32) as u32;
             if mt & (sci::SC_MOD_INSERTTEXT | sci::SC_MOD_DELETETEXT) != 0 {
                 mdpreview::schedule();
+                mdlive::schedule();
                 spell::schedule();
                 if a.sidebar_vis && a.side_mode == 1 {
                     SetTimer(a.hwnd, 2, 900, None);
@@ -230,6 +232,7 @@ unsafe fn on_timer(a: &mut App, id: usize) {
             KillTimer(a.hwnd, 2);
             sidebar::refresh();
         }
+        6 => mdlive::on_timer(),
         3 => session::save(a),
         9 => {
             KillTimer(a.hwnd, 9);
