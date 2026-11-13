@@ -14,6 +14,8 @@ pub mod fileops;
 pub mod prefs;
 #[path = "../keymap.rs"]
 pub mod keymap;
+#[path = "../macros.rs"]
+pub mod macros;
 #[path = "../findx.rs"]
 pub mod findx;
 #[path = "../assist.rs"]

@@ -345,6 +345,10 @@ fn ask_name(title: &str, initial: &str) -> Option<String> {
     (r == gtk::ResponseType::Ok).then_some(t)
 }
 
+pub fn ask_name_pub(title: &str, initial: &str) -> Option<String> {
+    ask_name(title, initial)
+}
+
 fn confirm(msg: &str) -> bool {
     let a = app();
     let d = gtk::MessageDialog::new(Some(&a.win), gtk::DialogFlags::MODAL, gtk::MessageType::Question, gtk::ButtonsType::YesNo, msg);

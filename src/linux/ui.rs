@@ -81,6 +81,8 @@ pub fn sync_checks() {
                 SPELL => a.spell,
                 TOPMOST => a.topmost,
                 AUTOCOMP => prefs::autocomp(),
+                GUIDES => prefs::view().0,
+                SHOWEOL => prefs::view().1,
                 FOLLOW => a.docs.get(a.cur).is_some_and(|d| d.follow),
                 x if (INDENT_AUTO..INDENT_AUTO + 5).contains(&x) => x - INDENT_AUTO == match prefs::indent() { prefs::Indent::Auto => 0, prefs::Indent::Spaces(2) => 1, prefs::Indent::Spaces(4) => 2, prefs::Indent::Spaces(8) => 3, _ => 4 },
                 READONLY => !a.docs.is_empty() && send(a.sci, sci::GETREADONLY, 0, 0) != 0,
@@ -415,6 +417,29 @@ pub fn on_command(id: usize) {
         SORTASC => textops::sort_lines(false),
         SORTDESC => textops::sort_lines(true),
         DEDUPE => textops::dedupe(),
+        MACRO_REC => {
+            crate::macros::toggle(a.sci);
+        }
+        MACRO_PLAY => crate::macros::play(a.sci, 1),
+        MACRO_PLAYN => {
+            if let Some(n) = side::ask_name_pub("Nombre de répétitions (0 = jusqu'à la fin du document)", "10") {
+                crate::macros::play(a.sci, n.trim().parse().unwrap_or(1));
+            }
+        }
+        COLINS => {
+            if let Some(t) = side::ask_name_pub("Texte à insérer ({n} = numéro, {n:10,5} = départ,pas)", "{n}. ") {
+                textops::column_insert(&t);
+            }
+        }
+        886..=892 => textops::line_op(id - LOP),
+        GUIDES | SHOWEOL => {
+            let (g, e) = prefs::view();
+            prefs::set_view(if id == GUIDES { !g } else { g }, if id == SHOWEOL { !e } else { e });
+            for t in &a.docs {
+                edit::style_view(t.sci, t.lang);
+            }
+            sync_checks();
+        }
         TRIM => textops::trim(),
         JOIN => textops::join(),
         TOGGLECOMMENT => textops::toggle_comment(),
@@ -630,6 +655,10 @@ fn build_menu(ag: &gtk::AccelGroup) -> gtk::MenuBar {
     add(&e, ag, "Remplacer...", Some("<Primary>h"), REPLACE);
     add(&e, ag, "Aller à la ligne...", Some("<Primary>g"), GOTO);
     e.append(&gtk::SeparatorMenuItem::new());
+    add(&e, ag, "Insérer en colonne...", Some("<Alt>c"), COLINS);
+    add(&e, ag, "Macro : démarrer / arrêter (F9)", Some("F9"), MACRO_REC);
+    add(&e, ag, "Macro : rejouer (F10)", Some("F10"), MACRO_PLAY);
+    add(&e, ag, "Macro : rejouer N fois...", None, MACRO_PLAYN);
     add(&e, ag, "Ajouter l'occurrence suivante", Some("<Alt>d"), SELNEXT);
     add(&e, ag, "Ouvrir le lien sous le curseur", Some("<Primary>Return"), OPENLINK);
     add(&e, ag, "Heure et date", Some("F5"), DATETIME);
@@ -648,6 +677,9 @@ fn build_menu(ag: &gtk::AccelGroup) -> gtk::MenuBar {
     add(&l, ag, "Supprimer", Some("<Primary><Shift>k"), DELLINE);
     add(&l, ag, "Joindre", Some("<Primary>j"), JOIN);
     l.append(&gtk::SeparatorMenuItem::new());
+    for (t, i) in [("Trier par longueur", LOP), ("Trier par valeur numérique", LOP + 1), ("Inverser l'ordre", LOP + 2), ("Mélanger", LOP + 3), ("Supprimer les lignes vides", LOP + 4), ("Supprimer les espaces en début de ligne", LOP + 5), ("Supprimer les doublons consécutifs", LOP + 6)] {
+        add(&l, ag, t, None, i);
+    }
     for (t, i) in [("Trier A → Z", SORTASC), ("Trier Z → A", SORTDESC), ("Supprimer les doublons", DEDUPE), ("Supprimer les espaces en fin de ligne", TRIM)] {
         add(&l, ag, t, None, i);
     }
@@ -709,6 +741,8 @@ fn build_menu(ag: &gtk::AccelGroup) -> gtk::MenuBar {
     add(&md, ag, "Encadré (callout)", None, MD_CALLOUT);
 
     let v = sub(&bar, "Affichage");
+    check(&v, ag, "Guides d'indentation", None, GUIDES);
+    check(&v, ag, "Fins de ligne visibles", None, SHOWEOL);
     add(&v, ag, "Zoom avant", Some("<Primary>plus"), ZOOMIN);
     add(&v, ag, "Zoom avant (=)", Some("<Primary>equal"), ZOOMIN);
     add(&v, ag, "Zoom arrière", Some("<Primary>minus"), ZOOMOUT);

@@ -47,6 +47,33 @@ pub fn sort_lines(desc: bool) {
     });
 }
 
+/// Opérations de lignes supplémentaires (tris par longueur / numérique, inverser, mélanger, lignes vides...).
+pub fn apply_line_op(kind: usize, mut v: Vec<String>) -> Vec<String> {
+    let num = |l: &String| l.trim().split(|c: char| !(c.is_ascii_digit() || c == '.' || c == '-')).next().and_then(|x| x.parse::<f64>().ok()).unwrap_or(f64::MAX);
+    match kind {
+        0 => v.sort_by_key(|l| l.chars().count()),
+        1 => v.sort_by(|a, b| num(a).total_cmp(&num(b))),
+        2 => v.reverse(),
+        3 => {
+            let mut x = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(7, |d| d.as_nanos() as u64) | 1;
+            for i in (1..v.len()).rev() {
+                x ^= x << 13;
+                x ^= x >> 7;
+                x ^= x << 17;
+                v.swap(i, (x % (i as u64 + 1)) as usize);
+            }
+        }
+        4 => v.retain(|l| !l.trim().is_empty()),
+        5 => v = v.into_iter().map(|l| l.trim_start().to_string()).collect(),
+        _ => v.dedup(),
+    }
+    v
+}
+
+pub fn line_op(kind: usize) {
+    transform_lines(|v| apply_line_op(kind, v));
+}
+
 pub fn dedupe() {
     transform_lines(|v| {
         let mut seen = std::collections::HashSet::new();
@@ -263,5 +290,76 @@ mod tests {
     fn prefixes() {
         assert_eq!(super::comment_prefix("python"), Some("#"));
         assert_eq!(super::comment_prefix("hypertext"), None);
+    }
+}
+
+#[cfg(test)]
+mod line_tests {
+    use super::apply_line_op as op;
+    fn v(x: &[&str]) -> Vec<String> { x.iter().map(|s| s.to_string()).collect() }
+    #[test]
+    fn line_ops() {
+        assert_eq!(op(0, v(&["ccc", "a", "bb"])), v(&["a", "bb", "ccc"]));
+        assert_eq!(op(1, v(&["10 b", "9 a", "100"])), v(&["9 a", "10 b", "100"]));
+        assert_eq!(op(2, v(&["1", "2"])), v(&["2", "1"]));
+        assert_eq!(op(4, v(&["a", "", "  ", "b"])), v(&["a", "b"]));
+        assert_eq!(op(5, v(&["  a", " b"])), v(&["a", "b"]));
+        assert_eq!(op(6, v(&["a", "a", "b", "a"])), v(&["a", "b", "a"]));
+        let mut s = op(3, v(&["1", "2", "3", "4", "5"]));
+        s.sort();
+        assert_eq!(s, v(&["1", "2", "3", "4", "5"]));
+    }
+}
+
+/// Texte à insérer sur la ligne `i` (0 = première) : `{n}` = compteur (départ 1), `{n:départ,pas}` = compteur réglé.
+pub fn col_text(spec: &str, i: usize) -> String {
+    let (mut out, mut rest) = (String::new(), spec);
+    while let Some(p) = rest.find("{n") {
+        out.push_str(&rest[..p]);
+        let after = &rest[p + 2..];
+        let Some(e) = after.find('}') else { out.push_str(&rest[p..]); return out };
+        let args = after[..e].strip_prefix(':').unwrap_or("");
+        let mut it = args.split(',').map(|x| x.trim().parse::<i64>());
+        let (start, step) = (it.next().and_then(Result::ok).unwrap_or(1), it.next().and_then(Result::ok).unwrap_or(1));
+        out.push_str(&(start + step * i as i64).to_string());
+        rest = &after[e + 1..];
+    }
+    out.push_str(rest);
+    out
+}
+
+/// Insère `spec` à la colonne du début de la sélection, sur chaque ligne sélectionnée (lignes courtes complétées par des espaces).
+pub fn column_insert(spec: &str) {
+    let s = app().sci;
+    let (ss, se) = (send(s, sci::GETSELSTART, 0, 0), send(s, sci::GETSELEND, 0, 0));
+    let col = send(s, 2129, ss as usize, 0); // GETCOLUMN
+    let l0 = send(s, sci::LINEFROMPOS, ss as usize, 0);
+    let mut l1 = send(s, sci::LINEFROMPOS, se as usize, 0);
+    if se > ss && l1 > l0 && send(s, sci::POSFROMLINE, l1 as usize, 0) == se {
+        l1 -= 1;
+    }
+    send(s, sci::BEGINUNDO, 0, 0);
+    for (i, l) in (l0..=l1).enumerate().collect::<Vec<_>>().into_iter().rev() {
+        let end = send(s, sci::GETLINEENDPOS, l as usize, 0);
+        let have = send(s, 2129, end as usize, 0);
+        let mut t = " ".repeat((col - have).max(0) as usize);
+        t.push_str(&col_text(spec, i));
+        let pos = if have >= col { send(s, 2456, l as usize, col) } else { end }; // FINDCOLUMN
+        let mut z = t.into_bytes();
+        z.push(0);
+        send(s, 2003, pos as usize, z.as_ptr() as isize); // INSERTTEXT
+    }
+    send(s, sci::ENDUNDO, 0, 0);
+}
+
+#[cfg(test)]
+mod col_tests {
+    use super::col_text;
+    #[test]
+    fn col() {
+        assert_eq!(col_text("x", 3), "x");
+        assert_eq!(col_text("a{n}b", 2), "a3b");
+        assert_eq!(col_text("{n:10,5}", 2), "20");
+        assert_eq!(col_text("{n", 0), "{n");
     }
 }

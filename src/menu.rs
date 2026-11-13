@@ -66,6 +66,12 @@ pub fn build() -> Menus {
         add(e, CUT, "Couper\tCtrl+X");
         add(e, COPY, "Copier\tCtrl+C");
         add(e, PASTE, "Coller\tCtrl+V");
+        sep(e);
+        add(e, COLINS, "Insérer en colonne...\tAlt+C");
+        let mc = sub(&[e], "Macro");
+        add(mc, MACRO_REC, "Démarrer / arrêter l'enregistrement\tF9");
+        add(mc, MACRO_PLAY, "Rejouer\tF10");
+        add(mc, MACRO_PLAYN, "Rejouer N fois...");
         add(e, DEL, "Supprimer\tSuppr");
         add(e, SELALL, "Tout sélectionner\tCtrl+A");
         sep(e);
@@ -96,6 +102,9 @@ pub fn build() -> Menus {
         add(l, SORTASC, "Trier A → Z");
         add(l, SORTDESC, "Trier Z → A");
         add(l, DEDUPE, "Supprimer les doublons");
+        for (i, t) in ["Trier par longueur", "Trier par valeur numérique", "Inverser l'ordre", "Mélanger", "Supprimer les lignes vides", "Supprimer les espaces en début de ligne", "Supprimer les doublons consécutifs"].iter().enumerate() {
+            add(l, LOP + i, t);
+        }
         add(l, TRIM, "Supprimer les espaces en fin de ligne");
         sep(l);
         add(l, TOGGLECOMMENT, "Commenter / décommenter\tCtrl+/");
@@ -164,6 +173,8 @@ pub fn build() -> Menus {
         add(v, ZEN, "Mode sans distraction\tF11");
         add(v, TOPMOST, "Toujours au premier plan");
         add(v, READONLY, "Lecture seule");
+        add(v, GUIDES, "Guides d'indentation");
+        add(v, SHOWEOL, "Fins de ligne visibles");
         sep(v);
         add(v, BOOKTOGGLE, "Signet : basculer\tCtrl+F2");
         add(v, BOOKNEXT, "Signet suivant\tF2");
@@ -246,7 +257,7 @@ pub fn build_accel() -> HACCEL {
     t.extend([
         k(c, ch('N'), NEW), k(c, ch('T'), NEW), k(c, ch('O'), OPEN), k(c, ch('S'), SAVE), k(cs, ch('S'), SAVEAS), k(c | FALT as u8, ch('S'), SAVEALL),
         k(c, ch('W'), CLOSE), k(cs, ch('T'), REOPEN), k(c, ch('F'), FIND), k(c, ch('H'), REPLACE), k(cs, ch('F'), FINDINFILES), k(c, ch('G'), GOTO),
-        k(FVIRTKEY as u8, VK_F3, FINDNEXT), k((FVIRTKEY | FSHIFT) as u8, VK_F3, FINDPREV), k(FVIRTKEY as u8, VK_F5, DATETIME), k(FVIRTKEY as u8, VK_F11, ZEN),
+        k(FVIRTKEY as u8, VK_F3, FINDNEXT), k((FVIRTKEY | FSHIFT) as u8, VK_F3, FINDPREV), k(FVIRTKEY as u8, VK_F5, DATETIME), k(FVIRTKEY as u8, 0x78, MACRO_REC), k(FVIRTKEY as u8, 0x79, MACRO_PLAY), k(al, ch('C'), COLINS), k(FVIRTKEY as u8, VK_F11, ZEN),
         k(c, ch('B'), MD_BOLD), k(c, ch('I'), MD_ITALIC), k(c, ch('K'), MD_LINK), k(c, ch('D'), DUPLINE), k(cs, ch('K'), DELLINE), k(cs, ch('U'), UPPER), k(c, ch('U'), LOWER), k(c, ch('J'), JOIN), k(c, 0xBF, TOGGLECOMMENT),
         k(al, ch('D'), SELNEXT), k(al, VK_UP, MOVEUP), k(al, VK_DOWN, MOVEDOWN), k(c, VK_RETURN, OPENLINK),
         k(FVIRTKEY as u8, VK_F2, BOOKNEXT), k((FVIRTKEY | FSHIFT) as u8, VK_F2, BOOKPREV), k(c, VK_F2, BOOKTOGGLE),

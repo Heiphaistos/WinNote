@@ -442,6 +442,34 @@ autre").unwrap();
     t.check_bool("renommer", renamed.as_ref().is_ok_and(|p| p.ends_with("m.md") && std::path::Path::new(p).exists()));
     t.check_bool("dupliquer", crate::fileops::duplicate(&renamed.unwrap_or_default()).is_ok_and(|p| p.ends_with("m copie.md")));
 
+    // ----- macros, insertion en colonne, lignes supplémentaires, guides d'indentation -----
+    lang("Texte brut");
+    set("a\nb\nc");
+    send(a.sci, sci::GOTOPOS, 0, 0);
+    cmds::on_command(MACRO_REC);
+    send(a.sci, 2170, 0, b"X\0".as_ptr() as isize); // REPLACESEL
+    send(a.sci, 2300, 0, 0); // LINEDOWN
+    send(a.sci, 2312, 0, 0); // HOME
+    cmds::on_command(MACRO_REC);
+    crate::macros::play(a.sci, 2);
+    t.check("macro enregistrée puis rejouée 2 fois", &get(), "Xa\nXb\nXc");
+    set("a\nb\nc");
+    send(a.sci, sci::SETSEL, 0, 5);
+    crate::textops::column_insert("{n}. ");
+    t.check("insertion en colonne avec numéros", &get(), "1. a\n2. b\n3. c");
+    set("ccc\na\nbb");
+    cmds::on_command(LOP);
+    t.check("trier par longueur", &get(), "a\nbb\nccc");
+    set("a\n\nb\n");
+    cmds::on_command(LOP + 4);
+    t.check("supprimer les lignes vides", &get(), "a\nb");
+    cmds::on_command(GUIDES);
+    t.check("guides d'indentation activés", &send(a.sci, 2133, 0, 0).to_string(), "3");
+    cmds::on_command(GUIDES);
+    cmds::on_command(SHOWEOL);
+    t.check("fins de ligne visibles", &send(a.sci, 2355, 0, 0).to_string(), "1");
+    cmds::on_command(SHOWEOL);
+
     // ----- tous les langages : lexer chargé + au moins un octet coloré sur un échantillon -----
     for (i, l) in LANGS.iter().enumerate() {
         if l.lexer.is_empty() || l.lexer == "markdown" {

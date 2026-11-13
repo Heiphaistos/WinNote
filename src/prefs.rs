@@ -14,12 +14,15 @@ pub enum Indent { Auto, Spaces(u8), Tabs }
 
 thread_local! {
     static INDENT: Cell<Indent> = const { Cell::new(Indent::Auto) };
+    static VIEW: Cell<(bool, bool)> = const { Cell::new((false, false)) };
     static AUTOCOMP: Cell<bool> = const { Cell::new(true) };
     static DIR: RefCell<PathBuf> = const { RefCell::new(PathBuf::new()) };
 }
 
 pub fn indent() -> Indent { INDENT.with(|c| c.get()) }
 pub fn set_indent(i: Indent) { INDENT.with(|c| c.set(i)); save(); }
+pub fn view() -> (bool, bool) { VIEW.with(|c| c.get()) }
+pub fn set_view(g: bool, e: bool) { VIEW.with(|c| c.set((g, e))); save(); }
 pub fn autocomp() -> bool { AUTOCOMP.with(|c| c.get()) }
 pub fn set_autocomp(b: bool) { AUTOCOMP.with(|c| c.set(b)); save(); }
 
@@ -28,6 +31,8 @@ pub fn init(dir: PathBuf) {
     if let Ok(s) = std::fs::read_to_string(dir.join("prefs.ini")) {
         for l in s.lines() {
             match l.split_once('=') {
+                Some(("guides", v)) => VIEW.with(|c| c.set((v == "1", c.get().1))),
+                Some(("eol", v)) => VIEW.with(|c| c.set((c.get().0, v == "1"))),
                 Some(("autocomp", v)) => AUTOCOMP.with(|c| c.set(v == "1")),
                 Some(("indent", v)) => INDENT.with(|c| c.set(match v {
                     "tabs" => Indent::Tabs,
@@ -47,7 +52,7 @@ fn save() {
     }
     let ind = match indent() { Indent::Auto => "auto".to_string(), Indent::Tabs => "tabs".into(), Indent::Spaces(n) => format!("spaces{n}") };
     let _ = std::fs::create_dir_all(&dir);
-    let _ = std::fs::write(dir.join("prefs.ini"), format!("autocomp={}\nindent={ind}\n", autocomp() as u8));
+    let _ = std::fs::write(dir.join("prefs.ini"), format!("autocomp={}\nindent={ind}\nguides={}\neol={}\n", autocomp() as u8, view().0 as u8, view().1 as u8));
 }
 
 /// Largeur et mode (tabulations ?) par défaut d'un langage.
@@ -79,6 +84,7 @@ pub fn apply_indent(s: HWND, lang: usize) {
     send(s, SETINDENT, if tabs { 0 } else { w }, 0);
     send(s, crate::sci::SETUSETABS, tabs as usize, 0);
     send(s, SETTABINDENTS, 1, 0);
+    send(s, 2356, view().1 as usize, 0); // SETVIEWEOL
     send(s, SETBACKSPACEUNINDENTS, 1, 0);
 }
 

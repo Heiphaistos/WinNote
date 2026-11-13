@@ -5,6 +5,7 @@ mod doc;
 mod findbar;
 mod findx;
 mod keymap;
+mod macros;
 mod prefs;
 mod fileops;
 mod ids;
@@ -203,6 +204,7 @@ unsafe fn on_notify(a: &mut App, lp: LPARAM) {
             spell::schedule();
             assist::brace_highlight(a.sci);
         }
+        2009 => macros::on_record(*(hdr.add(72) as *const i32) as u32, *(hdr.add(80) as *const usize), *(hdr.add(88) as *const isize)),
         2001 => {
             let lx = lang::LANGS[a.docs[a.cur].lang].lexer;
             assist::on_char(a.sci, *(hdr.add(32) as *const i32) as u8, !lx.is_empty() && lx != "markdown", lx.is_empty());

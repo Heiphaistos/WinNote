@@ -121,7 +121,7 @@ fn style_view(a: &App, s: HWND) {
     send(s, sci::SETAUTOFOLD, 7, 0);
     send(s, sci::SETWRAP, a.wrap as usize, 0);
     send(s, sci::SETVIEWWS, a.ws as usize, 0);
-    send(s, sci::SETINDGUIDES, if a.lines { 3 } else { 0 }, 0);
+    send(s, sci::SETINDGUIDES, if a.lines || crate::prefs::view().0 { 3 } else { 0 }, 0);
     send(s, sci::SETEXTRAASCENT, (sc(a.spacing) / 2) as usize, 0);
     send(s, sci::SETEXTRADESCENT, (sc(a.spacing) / 2) as usize, 0);
     send(s, sci::USEPOPUP, 0, 0);
@@ -214,6 +214,8 @@ pub fn refresh() {
             chk(FOLDMARGIN, a.fold);
             chk(ZEN, a.zen);
             chk(TOPMOST, a.topmost);
+            chk(GUIDES, crate::prefs::view().0);
+            chk(SHOWEOL, crate::prefs::view().1);
             chk(AUTOCOMP, crate::prefs::autocomp());
             let ind = match crate::prefs::indent() { crate::prefs::Indent::Auto => 0, crate::prefs::Indent::Spaces(2) => 1, crate::prefs::Indent::Spaces(4) => 2, crate::prefs::Indent::Spaces(8) => 3, _ => 4 };
             CheckMenuRadioItem(m, INDENT_AUTO as u32, (INDENT_AUTO + 4) as u32, (INDENT_AUTO + ind) as u32, MF_BYCOMMAND);
@@ -763,6 +765,18 @@ pub fn on_command(id: usize) {
         SORTASC => textops::sort_lines(false),
         SORTDESC => textops::sort_lines(true),
         DEDUPE => textops::dedupe(),
+        MACRO_REC => {
+            crate::macros::toggle(a.sci);
+        }
+        MACRO_PLAY => crate::macros::play(a.sci, 1),
+        MACRO_PLAYN => crate::palette::input("Nombre de répétitions (0 = jusqu'à la fin du document)", "10", Box::new(|n| crate::macros::play(app().sci, n.trim().parse().unwrap_or(1)))),
+        COLINS => crate::palette::input("Texte à insérer ({n} = numéro, {n:10,5} = départ,pas)", "{n}. ", Box::new(|t| textops::column_insert(&t))),
+        886..=892 => textops::line_op(id - LOP),
+        GUIDES | SHOWEOL => {
+            let (g, e) = crate::prefs::view();
+            crate::prefs::set_view(if id == GUIDES { !g } else { g }, if id == SHOWEOL { !e } else { e });
+            style_editor(a);
+        }
         TRIM => textops::trim(),
         JOIN => textops::join(),
         TOGGLECOMMENT => textops::toggle_comment(),

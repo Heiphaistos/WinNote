@@ -132,7 +132,7 @@ pub fn style_view(s: HWND, lang: usize) {
     send(s, sci::SETAUTOFOLD, 7, 0);
     send(s, sci::SETWRAP, a.wrap as usize, 0);
     send(s, sci::SETVIEWWS, a.ws as usize, 0);
-    send(s, sci::SETINDGUIDES, if a.lines { 3 } else { 0 }, 0);
+    send(s, sci::SETINDGUIDES, if a.lines || crate::prefs::view().0 { 3 } else { 0 }, 0);
     send(s, sci::SETEXTRAASCENT, (a.spacing / 2) as usize, 0);
     send(s, sci::SETEXTRADESCENT, (a.spacing / 2) as usize, 0);
     send(s, sci::SETMULTISEL, 1, 0);
@@ -173,6 +173,7 @@ unsafe extern "C" fn on_notify(_w: *mut c_void, _id: c_int, n: *mut c_void, data
             crate::view::schedule();
             crate::assist::brace_highlight(a.docs[i].sci);
         }
+        2009 => crate::macros::on_record(*(base.add(72) as *const i32) as u32, *(base.add(80) as *const usize), *(base.add(88) as *const isize)),
         2001 => {
             let lx = LANGS[a.docs[i].lang].lexer;
             crate::assist::on_char(a.docs[i].sci, *(base.add(32) as *const i32) as u8, !lx.is_empty() && lx != "markdown", lx.is_empty());

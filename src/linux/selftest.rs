@@ -206,6 +206,30 @@ pub fn run(log_path: &str) -> i32 {
     t.check("indentation forcée : 8 espaces", &format!("{} {}", send(a.sci, 2121, 0, 0), send(a.sci, 2125, 0, 0)), "8 0");
     on_command(INDENT_AUTO);
     lang("Texte brut");
+    // macros, colonne, lignes, guides
+    lang("Texte brut");
+    set("a\nb\nc");
+    send(a.sci, sci::GOTOPOS, 0, 0);
+    on_command(MACRO_REC);
+    send(a.sci, 2170, 0, b"X\0".as_ptr() as isize);
+    send(a.sci, 2300, 0, 0);
+    send(a.sci, 2312, 0, 0);
+    on_command(MACRO_REC);
+    crate::macros::play(a.sci, 2);
+    t.check("macro enregistrée puis rejouée 2 fois", &get(), "Xa\nXb\nXc");
+    set("a\nb\nc");
+    send(a.sci, sci::SETSEL, 0, 5);
+    crate::textops::column_insert("{n}. ");
+    t.check("insertion en colonne avec numéros", &get(), "1. a\n2. b\n3. c");
+    set("ccc\na\nbb");
+    on_command(LOP);
+    t.check("trier par longueur", &get(), "a\nbb\nccc");
+    set("a\n\nb\n");
+    on_command(LOP + 4);
+    t.check("supprimer les lignes vides", &get(), "a\nb");
+    on_command(GUIDES);
+    t.check("guides d'indentation activés", &send(a.sci, 2133, 0, 0).to_string(), "3");
+    on_command(GUIDES);
     // liens [[note]]
     set("voir [[note-x]] ici");
     send(a.sci, sci::SETSEL, 8, 8);
