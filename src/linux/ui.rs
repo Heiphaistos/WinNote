@@ -348,6 +348,9 @@ pub fn on_command(id: usize) {
         }
         CLOSE => edit::close_tab(doc_i),
         CLOSEOTHERS => edit::close_others(doc_i),
+        CLOSELEFT => edit::close_side(doc_i, -1),
+        CLOSERIGHT => edit::close_side(doc_i, 1),
+        CLOSECLEAN => edit::close_side(doc_i, 0),
         CLOSEALL => {
             while !(a.docs.len() == 1 && a.docs[0].path.is_none() && !a.docs[0].dirty) {
                 let before = (a.docs.len(), a.docs[0].sci);
@@ -417,6 +420,19 @@ pub fn on_command(id: usize) {
         SORTASC => textops::sort_lines(false),
         SORTDESC => textops::sort_lines(true),
         DEDUPE => textops::dedupe(),
+        DAILY => match a.root.clone() {
+            Some(r) => {
+                let t = gtk::glib::DateTime::now_local().ok();
+                let (y, m, d) = t.map_or((1970, 1, 1), |t| (t.year(), t.month() as u32, t.day_of_month() as u32));
+                let (p, c) = notes::daily_note(&r, y, m, d);
+                if !std::path::Path::new(&p).exists() {
+                    let _ = std::fs::write(&p, c);
+                    side::show_files();
+                }
+                edit::open_path(&p);
+            }
+            None => msg_box("Ouvrez d'abord un dossier (Fichier > Ouvrir un dossier)."),
+        },
         MACRO_REC => {
             crate::macros::toggle(a.sci);
         }
@@ -633,6 +649,7 @@ fn build_menu(ag: &gtk::AccelGroup) -> gtk::MenuBar {
     add(&f, ag, "Enregistrer sous...", Some("<Primary><Shift>s"), SAVEAS);
     add(&f, ag, "Tout enregistrer", Some("<Primary><Alt>s"), SAVEALL);
     add(&f, ag, "Recharger depuis le disque", None, RELOAD);
+    add(&f, ag, "Note du jour", None, DAILY);
     check(&f, ag, "Suivre la fin du fichier (tail -f)", None, FOLLOW);
     add(&f, ag, "Imprimer...", Some("<Primary>p"), PRINT);
     add(&f, ag, "Ouvrir dans une nouvelle fenêtre", None, NEWWINDOW);
@@ -642,6 +659,9 @@ fn build_menu(ag: &gtk::AccelGroup) -> gtk::MenuBar {
     f.append(&gtk::SeparatorMenuItem::new());
     add(&f, ag, "Fermer l'onglet", Some("<Primary>w"), CLOSE);
     add(&f, ag, "Fermer les autres onglets", None, CLOSEOTHERS);
+    add(&f, ag, "Fermer les onglets à gauche", None, CLOSELEFT);
+    add(&f, ag, "Fermer les onglets à droite", None, CLOSERIGHT);
+    add(&f, ag, "Fermer les onglets non modifiés", None, CLOSECLEAN);
     add(&f, ag, "Quitter", Some("<Primary>q"), EXIT);
 
     let e = sub(&bar, "Édition");

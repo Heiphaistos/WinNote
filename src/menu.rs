@@ -48,6 +48,7 @@ pub fn build() -> Menus {
         add(f, SAVEALL, "Tout enregistrer\tCtrl+Alt+S");
         add(f, PRINT, "Imprimer...\tCtrl+P");
         add(f, RELOAD, "Recharger depuis le disque");
+        add(f, DAILY, "Note du jour");
         add(f, FOLLOW, "Suivre la fin du fichier (tail -f)");
         sep(f);
         add(f, REVEALFILE, "Afficher dans l'explorateur");
@@ -56,6 +57,9 @@ pub fn build() -> Menus {
         sep(f);
         add(f, CLOSE, "Fermer l'onglet\tCtrl+W");
         add(f, CLOSEOTHERS, "Fermer les autres onglets");
+        add(f, CLOSELEFT, "Fermer les onglets à gauche");
+        add(f, CLOSERIGHT, "Fermer les onglets à droite");
+        add(f, CLOSECLEAN, "Fermer les onglets non modifiés");
         add(f, CLOSEALL, "Fermer tous les onglets");
         add(f, EXIT, "Quitter");
 
@@ -309,7 +313,7 @@ pub fn editor_context(x: i32, y: i32) {
 pub fn tab_context(x: i32, y: i32) {
     unsafe {
         let m = CreatePopupMenu();
-        for (id, t) in [(CLOSE, "Fermer"), (NEWWINDOW, "Ouvrir dans une nouvelle fenêtre"), (CLOSEOTHERS, "Fermer les autres"), (CLOSEALL, "Fermer tous"), (0, ""), (SAVE, "Enregistrer"), (SAVEAS, "Enregistrer sous..."),
+        for (id, t) in [(CLOSE, "Fermer"), (NEWWINDOW, "Ouvrir dans une nouvelle fenêtre"), (CLOSEOTHERS, "Fermer les autres"), (CLOSELEFT, "Fermer à gauche"), (CLOSERIGHT, "Fermer à droite"), (CLOSEALL, "Fermer tous"), (0, ""), (SAVE, "Enregistrer"), (SAVEAS, "Enregistrer sous..."),
             (0, ""), (COPYPATH, "Copier le chemin"), (REVEALFILE, "Afficher dans l'explorateur"), (REOPEN, "Rouvrir l'onglet fermé")] {
             if id == 0 { sep(m) } else { add(m, id, t) }
         }

@@ -347,6 +347,23 @@ pub fn drop_tab(i: usize) {
     crate::view::on_tab_changed();
 }
 
+pub fn close_side(keep: usize, dir: i32) {
+    let a = app();
+    let keep_ptr = a.docs[keep].sci;
+    loop {
+        let k = a.docs.iter().position(|t| t.sci == keep_ptr).unwrap_or(0);
+        let Some(i) = a.docs.iter().enumerate().position(|(j, t)| match dir {
+            x if x < 0 => j < k,
+            0 => !t.dirty && t.sci != keep_ptr && t.path.is_some(),
+            _ => j > k,
+        }) else { break };
+        if !confirm_close(i) {
+            break;
+        }
+        drop_tab(i);
+    }
+}
+
 pub fn close_others(keep: usize) {
     let a = app();
     let keep_ptr = a.docs[keep].sci;

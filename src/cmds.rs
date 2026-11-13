@@ -469,6 +469,24 @@ pub fn cmd_close(i: usize) {
     }
 }
 
+/// Ferme les onglets à gauche (`dir` < 0) ou à droite (`dir` > 0) de l'onglet courant, ou tous ceux sans modification (`dir` = 0).
+fn close_side(dir: i32) {
+    let a = app();
+    let keep_ptr = a.docs[a.cur].ptr;
+    loop {
+        let k = a.docs.iter().position(|d| d.ptr == keep_ptr).unwrap_or(0);
+        let Some(i) = a.docs.iter().enumerate().position(|(j, d)| match dir {
+            x if x < 0 => j < k,
+            0 => !d.dirty && d.ptr != keep_ptr && d.path.is_some(),
+            _ => j > k,
+        }) else { break };
+        if !confirm_close(a, i) {
+            break;
+        }
+        drop_doc(a, i);
+    }
+}
+
 fn close_many(keep: Option<usize>) {
     let a = app();
     let keep_ptr = keep.map(|k| a.docs[k].ptr);
@@ -695,6 +713,9 @@ pub fn on_command(id: usize) {
         }
         CLOSE => cmd_close(a.cur),
         CLOSEOTHERS => close_many(Some(a.cur)),
+        CLOSELEFT => close_side(-1),
+        CLOSERIGHT => close_side(1),
+        CLOSECLEAN => close_side(0),
         CLOSEALL => close_many(None),
         REOPEN => {
             if let Some(p) = a.closed.pop() {
@@ -801,6 +822,22 @@ pub fn on_command(id: usize) {
             style_editor(a);
             refresh();
         }
+        DAILY => match a.root.clone() {
+            Some(r) => {
+                let t = unsafe {
+                    let mut st = std::mem::zeroed();
+                    GetLocalTime(&mut st);
+                    st
+                };
+                let (p, c) = crate::notes::daily_note(&r, t.wYear as i32, t.wMonth as u32, t.wDay as u32);
+                if !std::path::Path::new(&p).exists() {
+                    let _ = std::fs::write(&p, c);
+                    crate::sidebar::show_files();
+                }
+                open_path(&p);
+            }
+            None => msg_box("Ouvrez d'abord un dossier (Fichier > Ouvrir un dossier)."),
+        },
         DATETIME => {
             let t = unsafe {
                 let mut st = std::mem::zeroed();

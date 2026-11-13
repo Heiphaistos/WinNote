@@ -77,3 +77,25 @@ mod tests {
         assert_eq!(super::outline("fn x() {\n    fn y() {", false).len(), 2);
     }
 }
+
+/// Note quotidienne : (chemin, contenu initial). Le modèle est `modele-quotidien.md` du dossier (`{{date}}` remplacé), sinon un simple titre.
+pub fn daily_note(root: &str, y: i32, m: u32, d: u32) -> (String, String) {
+    let date = format!("{y:04}-{m:02}-{d:02}");
+    let path = std::path::Path::new(root).join(format!("{date}.md"));
+    let tpl = std::fs::read_to_string(std::path::Path::new(root).join("modele-quotidien.md")).unwrap_or_else(|_| "# {{date}}\n\n".to_string());
+    (path.to_string_lossy().into_owned(), tpl.replace("{{date}}", &date))
+}
+
+#[cfg(test)]
+mod daily_tests {
+    #[test]
+    fn daily() {
+        let dir = std::env::temp_dir().join(format!("wn_daily_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).ok();
+        let (p, c) = super::daily_note(&dir.to_string_lossy(), 2026, 3, 9);
+        assert!(p.ends_with("2026-03-09.md") && c == "# 2026-03-09\n\n");
+        std::fs::write(dir.join("modele-quotidien.md"), "J {{date}}").ok();
+        assert_eq!(super::daily_note(&dir.to_string_lossy(), 2026, 3, 9).1, "J 2026-03-09");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+}

@@ -470,6 +470,14 @@ autre").unwrap();
     t.check("fins de ligne visibles", &send(a.sci, 2355, 0, 0).to_string(), "1");
     cmds::on_command(SHOWEOL);
 
+    // ----- fermer les onglets à droite -----
+    let n0 = a.docs.len();
+    cmds::new_doc(a);
+    cmds::new_doc(a);
+    cmds::switch_to(a, n0);
+    cmds::on_command(CLOSERIGHT);
+    t.check("fermer les onglets à droite", &a.docs.len().to_string(), &(n0 + 1).to_string());
+
     // ----- tous les langages : lexer chargé + au moins un octet coloré sur un échantillon -----
     for (i, l) in LANGS.iter().enumerate() {
         if l.lexer.is_empty() || l.lexer == "markdown" {
