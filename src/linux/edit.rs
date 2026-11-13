@@ -92,6 +92,7 @@ pub fn style_view(s: HWND, lang: usize) {
     send(s, sci::STYLESETFORE, sci::STYLE_LINENUM, t.gutter as isize);
     send(s, sci::STYLESETBACK, sci::STYLE_LINENUM, t.bg as isize);
     send(s, sci::STYLESETFORE, sci::STYLE_INDENT, t.line as isize);
+    crate::assist::style(s, t.accent, t.sel, t.fg);
     send(s, sci::SETSELBACK, 1, t.sel as isize);
     send(s, sci::SETCARETFORE, t.fg as usize, 0);
     send(s, sci::SETCARETW, 2, 0);
@@ -170,8 +171,11 @@ unsafe extern "C" fn on_notify(_w: *mut c_void, _id: c_int, n: *mut c_void, data
         sci::SCN_UPDATEUI => {
             crate::ui::update_status();
             crate::view::schedule();
+            crate::assist::brace_highlight(a.docs[i].sci);
         }
         2001 => {
+            let lx = LANGS[a.docs[i].lang].lexer;
+            crate::assist::on_char(a.docs[i].sci, *(base.add(32) as *const i32) as u8, !lx.is_empty() && lx != "markdown", lx.is_empty());
             if *(base.add(32) as *const i32) == 10 {
                 let s = a.docs[i].sci;
                 let ln = send(s, sci::LINEFROMPOS, send(s, sci::GETCURRENTPOS, 0, 0) as usize, 0);
@@ -180,6 +184,9 @@ unsafe extern "C" fn on_notify(_w: *mut c_void, _id: c_int, n: *mut c_void, data
                     send(s, 2126, ln as usize, ind);
                     let p = send(s, 2128, ln as usize, 0);
                     send(s, sci::GOTOPOS, p as usize, 0);
+                    if LANGS[a.docs[i].lang].lexer == "markdown" {
+                        crate::mdedit::on_enter(s);
+                    }
                 }
             }
         }

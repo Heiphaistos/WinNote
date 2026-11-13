@@ -177,4 +177,5 @@ pub const SCN_MODIFIED: u32 = 2008;
 pub const SCN_MARGINCLICK: u32 = 2010;
 pub const SCN_DOUBLECLICK: u32 = 2006;
 pub const SC_MOD_INSERTTEXT: u32 = 1;
+pub const INSERTTEXT: u32 = 2003;
 pub const SC_MOD_DELETETEXT: u32 = 2;

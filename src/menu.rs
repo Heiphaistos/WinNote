@@ -113,6 +113,32 @@ pub fn build() -> Menus {
         add(eol, EOL + 1, "Macintosh (CR)");
         add(eol, EOL + 2, "Unix (LF)");
 
+        let md = sub(&[fm], "Markdown");
+        add(md, MD_BOLD, "Gras	Ctrl+B");
+        add(md, MD_ITALIC, "Italique	Ctrl+I");
+        add(md, MD_STRIKE, "Barré");
+        add(md, MD_HILITE, "Surligné");
+        add(md, MD_CODE, "Code en ligne");
+        sep(md);
+        add(md, MD_H1, "Titre 1");
+        add(md, MD_H1 + 1, "Titre 2");
+        add(md, MD_H1 + 2, "Titre 3");
+        add(md, MD_H1 + 3, "Titre 4");
+        add(md, MD_H1 + 4, "Titre 5");
+        add(md, MD_H1 + 5, "Titre 6");
+        sep(md);
+        add(md, MD_QUOTE, "Citation");
+        add(md, MD_BULLET, "Liste à puces");
+        add(md, MD_NUMLIST, "Liste numérotée");
+        add(md, MD_TASK, "Liste de tâches");
+        sep(md);
+        add(md, MD_LINK, "Lien	Ctrl+K");
+        add(md, MD_WIKI, "Lien [[note]]");
+        add(md, MD_TABLE, "Tableau");
+        add(md, MD_CODEBLOCK, "Bloc de code");
+        add(md, MD_HR, "Ligne horizontale");
+        add(md, MD_CALLOUT, "Encadré (callout)");
+
         let v = sub(&both, "Affichage");
         add(v, ZOOMIN, "Zoom avant\tCtrl++");
         add(v, ZOOMOUT, "Zoom arrière\tCtrl+-");
@@ -200,7 +226,7 @@ pub fn build_accel() -> HACCEL {
         k(c, ch('N'), NEW), k(c, ch('T'), NEW), k(c, ch('O'), OPEN), k(c, ch('S'), SAVE), k(cs, ch('S'), SAVEAS), k(c | FALT as u8, ch('S'), SAVEALL),
         k(c, ch('W'), CLOSE), k(cs, ch('T'), REOPEN), k(c, ch('F'), FIND), k(c, ch('H'), REPLACE), k(cs, ch('F'), FINDINFILES), k(c, ch('G'), GOTO),
         k(FVIRTKEY as u8, VK_F3, FINDNEXT), k((FVIRTKEY | FSHIFT) as u8, VK_F3, FINDPREV), k(FVIRTKEY as u8, VK_F5, DATETIME), k(FVIRTKEY as u8, VK_F11, ZEN),
-        k(c, ch('D'), DUPLINE), k(cs, ch('K'), DELLINE), k(cs, ch('U'), UPPER), k(c, ch('U'), LOWER), k(c, ch('J'), JOIN), k(c, 0xBF, TOGGLECOMMENT),
+        k(c, ch('B'), MD_BOLD), k(c, ch('I'), MD_ITALIC), k(c, ch('K'), MD_LINK), k(c, ch('D'), DUPLINE), k(cs, ch('K'), DELLINE), k(cs, ch('U'), UPPER), k(c, ch('U'), LOWER), k(c, ch('J'), JOIN), k(c, 0xBF, TOGGLECOMMENT),
         k(al, ch('D'), SELNEXT), k(al, VK_UP, MOVEUP), k(al, VK_DOWN, MOVEDOWN), k(c, VK_RETURN, OPENLINK),
         k(FVIRTKEY as u8, VK_F2, BOOKNEXT), k((FVIRTKEY | FSHIFT) as u8, VK_F2, BOOKPREV), k(c, VK_F2, BOOKTOGGLE),
         k(c, VK_TAB, TABNEXT), k(cs, VK_TAB, TABPREV), k(c, 0xBB, ZOOMIN), k(c, 0xBD, ZOOMOUT), k(c, ch('0'), ZOOMRESET),

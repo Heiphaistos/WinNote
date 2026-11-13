@@ -11,6 +11,8 @@ mod mdrender;
 mod menubar;
 mod notes;
 mod palette;
+mod assist;
+mod mdedit;
 mod mdlive;
 mod mdstyle;
 mod print;
@@ -195,8 +197,11 @@ unsafe fn on_notify(a: &mut App, lp: LPARAM) {
         sci::SCN_UPDATEUI => {
             InvalidateRect(a.status, null(), 0);
             spell::schedule();
+            assist::brace_highlight(a.sci);
         }
         2001 => {
+            let lx = lang::LANGS[a.docs[a.cur].lang].lexer;
+            assist::on_char(a.sci, *(hdr.add(32) as *const i32) as u8, !lx.is_empty() && lx != "markdown", lx.is_empty());
             // SCN_CHARADDED : indentation automatique (reprend celle de la ligne précédente)
             if *(hdr.add(32) as *const i32) == 10 {
                 let ln = sci::send(a.sci, sci::LINEFROMPOS, sci::send(a.sci, sci::GETCURRENTPOS, 0, 0) as usize, 0);
@@ -205,6 +210,9 @@ unsafe fn on_notify(a: &mut App, lp: LPARAM) {
                     sci::send(a.sci, 2126, ln as usize, ind);
                     let p = sci::send(a.sci, 2128, ln as usize, 0);
                     sci::send(a.sci, sci::GOTOPOS, p as usize, 0);
+                    if mdlive::is_md() {
+                        mdedit::on_enter(a.sci);
+                    }
                 }
             }
         }

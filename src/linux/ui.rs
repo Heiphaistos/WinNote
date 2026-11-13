@@ -391,6 +391,7 @@ pub fn on_command(id: usize) {
         TRIM => textops::trim(),
         JOIN => textops::join(),
         TOGGLECOMMENT => textops::toggle_comment(),
+        MD_BOLD..=MD_CALLOUT | MD_H1..=1025 => crate::mdedit::run(s, id),
         TITLECASE => textops::title_case(),
         TABS2SPACES => textops::tabs_to_spaces(),
         SPACES2TABS => textops::spaces_to_tabs(),
@@ -639,6 +640,35 @@ fn build_menu(ag: &gtk::AccelGroup) -> gtk::MenuBar {
     for (i, t) in ["Windows (CRLF)", "Macintosh (CR)", "Unix (LF)"].iter().enumerate() {
         add(&eol, ag, t, None, EOL + i);
     }
+
+    let md_item = gtk::MenuItem::with_label("Markdown");
+    let md = gtk::Menu::new();
+    md_item.set_submenu(Some(&md));
+    fm.append(&md_item);
+    add(&md, ag, "Gras", Some("<Primary>b"), MD_BOLD);
+    add(&md, ag, "Italique", Some("<Primary>i"), MD_ITALIC);
+    add(&md, ag, "Barré", None, MD_STRIKE);
+    add(&md, ag, "Surligné", None, MD_HILITE);
+    add(&md, ag, "Code en ligne", None, MD_CODE);
+    md.append(&gtk::SeparatorMenuItem::new());
+    add(&md, ag, "Titre 1", None, MD_H1);
+    add(&md, ag, "Titre 2", None, MD_H1 + 1);
+    add(&md, ag, "Titre 3", None, MD_H1 + 2);
+    add(&md, ag, "Titre 4", None, MD_H1 + 3);
+    add(&md, ag, "Titre 5", None, MD_H1 + 4);
+    add(&md, ag, "Titre 6", None, MD_H1 + 5);
+    md.append(&gtk::SeparatorMenuItem::new());
+    add(&md, ag, "Citation", None, MD_QUOTE);
+    add(&md, ag, "Liste à puces", None, MD_BULLET);
+    add(&md, ag, "Liste numérotée", None, MD_NUMLIST);
+    add(&md, ag, "Liste de tâches", None, MD_TASK);
+    md.append(&gtk::SeparatorMenuItem::new());
+    add(&md, ag, "Lien", Some("<Primary>k"), MD_LINK);
+    add(&md, ag, "Lien [[note]]", None, MD_WIKI);
+    add(&md, ag, "Tableau", None, MD_TABLE);
+    add(&md, ag, "Bloc de code", None, MD_CODEBLOCK);
+    add(&md, ag, "Ligne horizontale", None, MD_HR);
+    add(&md, ag, "Encadré (callout)", None, MD_CALLOUT);
 
     let v = sub(&bar, "Affichage");
     add(&v, ag, "Zoom avant", Some("<Primary>plus"), ZOOMIN);

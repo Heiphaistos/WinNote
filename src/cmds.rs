@@ -80,6 +80,7 @@ fn style_view(a: &App, s: HWND) {
     send(s, sci::STYLESETFORE, sci::STYLE_LINENUM, t.gutter as isize);
     send(s, sci::STYLESETBACK, sci::STYLE_LINENUM, t.bg as isize);
     send(s, sci::STYLESETFORE, sci::STYLE_INDENT, t.line as isize);
+    crate::assist::style(s, t.accent, t.sel, t.fg);
     send(s, sci::SETSELBACK, 1, t.sel as isize);
     send(s, sci::SETCARETFORE, t.fg as usize, 0);
     send(s, sci::SETCARETW, sc(2) as usize, 0);
@@ -710,6 +711,7 @@ pub fn on_command(id: usize) {
         TRIM => textops::trim(),
         JOIN => textops::join(),
         TOGGLECOMMENT => textops::toggle_comment(),
+        MD_BOLD..=MD_CALLOUT | MD_H1..=1025 => crate::mdedit::run(s, id),
         TITLECASE => textops::title_case(),
         TABS2SPACES => textops::tabs_to_spaces(),
         SPACES2TABS => textops::spaces_to_tabs(),

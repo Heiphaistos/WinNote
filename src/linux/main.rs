@@ -8,6 +8,10 @@ pub mod doc;
 pub mod ids;
 #[path = "../lang.rs"]
 pub mod lang;
+#[path = "../assist.rs"]
+pub mod assist;
+#[path = "../mdedit.rs"]
+pub mod mdedit;
 #[path = "../mdstyle.rs"]
 pub mod mdstyle;
 #[path = "../mdrender.rs"]

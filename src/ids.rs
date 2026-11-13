@@ -100,6 +100,22 @@ pub const DWRITE: usize = 857;
 pub const SPELLLANG: usize = 860; // 860..864
 pub const SPELLFIX: usize = 900; // 900..904
 pub const SPELLADD: usize = 905;
+pub const MD_BOLD: usize = 1000;
+pub const MD_ITALIC: usize = 1001;
+pub const MD_STRIKE: usize = 1002;
+pub const MD_HILITE: usize = 1003;
+pub const MD_CODE: usize = 1004;
+pub const MD_QUOTE: usize = 1005;
+pub const MD_BULLET: usize = 1006;
+pub const MD_NUMLIST: usize = 1007;
+pub const MD_TASK: usize = 1008;
+pub const MD_LINK: usize = 1009;
+pub const MD_WIKI: usize = 1010;
+pub const MD_TABLE: usize = 1011;
+pub const MD_CODEBLOCK: usize = 1012;
+pub const MD_HR: usize = 1013;
+pub const MD_CALLOUT: usize = 1014;
+pub const MD_H1: usize = 1020; // 1020..1025
 pub const SPELLIGNORE: usize = 906;
 
 /// Commandes proposées dans la palette (Ctrl+Maj+P).
@@ -120,5 +136,9 @@ pub static PALETTE_CMDS: &[(usize, &str)] = &[
     (TOPMOST, "Affichage : toujours au premier plan"), (READONLY, "Affichage : lecture seule"), (ZOOMIN, "Zoom avant"), (ZOOMOUT, "Zoom arrière"), (ZOOMRESET, "Zoom par défaut"),
     (CHROME_WIN, "Style de fenêtre : Windows"), (CHROME_MAC, "Style de fenêtre : macOS (boutons à gauche)"), (FONT, "Format : police..."),
     (OPENLINK, "Ouvrir le lien / [[note]] sous le curseur"), (STATS, "Statistiques du document"), (REGISTER, "Intégrer à l'explorateur (Modifier avec WinNote)"), (UNREGISTER, "Retirer l'intégration à l'explorateur"),
+    (MD_BOLD, "Markdown : gras"), (MD_ITALIC, "Markdown : italique"), (MD_STRIKE, "Markdown : barré"), (MD_HILITE, "Markdown : surligné"), (MD_CODE, "Markdown : code en ligne"),
+    (MD_QUOTE, "Markdown : citation"), (MD_BULLET, "Markdown : liste à puces"), (MD_NUMLIST, "Markdown : liste numérotée"), (MD_TASK, "Markdown : liste de tâches"),
+    (MD_LINK, "Markdown : lien"), (MD_WIKI, "Markdown : lien [[note]]"), (MD_TABLE, "Markdown : tableau"), (MD_CODEBLOCK, "Markdown : bloc de code"), (MD_HR, "Markdown : ligne horizontale"), (MD_CALLOUT, "Markdown : encadré (callout)"),
+    (MD_H1, "Markdown : titre 1"), (MD_H1 + 1, "Markdown : titre 2"), (MD_H1 + 2, "Markdown : titre 3"), (MD_H1 + 3, "Markdown : titre 4"), (MD_H1 + 4, "Markdown : titre 5"), (MD_H1 + 5, "Markdown : titre 6"),
     (UPDATE, "Rechercher une mise à jour"), (AUTOUPDATE, "Mises à jour automatiques : activer / couper"), (ABOUT, "À propos de WinNote"),
 ];

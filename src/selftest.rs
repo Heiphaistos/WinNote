@@ -302,6 +302,50 @@ autre").unwrap();
     crate::mdlive::on_timer();
     t.check("document sans nom : passe seul en Markdown", LANGS[a.docs[a.cur].lang].name, "Markdown");
 
+    // ----- commandes de mise en forme Markdown -----
+    let md = |id: usize, text: &str, s0: usize, s1: usize| {
+        set(text);
+        send(a.sci, sci::SETSEL, s0, s1 as isize);
+        cmds::on_command(id);
+        get()
+    };
+    t.check("Markdown : gras", &md(MD_BOLD, "un mot ici", 3, 6), "un **mot** ici");
+    t.check("Markdown : gras retiré", &md(MD_BOLD, "un **mot** ici", 5, 8), "un mot ici");
+    t.check("Markdown : italique sans sélection", &md(MD_ITALIC, "ab", 1, 1), "a**b");
+    t.check("Markdown : titre 2", &md(MD_H1 + 1, "titre", 0, 0), "## titre");
+    t.check("Markdown : liste à puces (2 lignes)", &md(MD_BULLET, "a\nb", 0, 3), "- a\n- b");
+    t.check("Markdown : liste numérotée", &md(MD_NUMLIST, "a\nb", 0, 3), "1. a\n2. b");
+    t.check("Markdown : lien", &md(MD_LINK, "site", 0, 4), "[site](adresse)");
+    t.check("Markdown : bloc de code", &md(MD_CODEBLOCK, "x", 0, 1), "```\nx\n```");
+    set("- a");
+    send(a.sci, sci::SETSEL, 3, 3);
+    unsafe { SendMessageW(a.sci, WM_KEYDOWN, 0x0D, 0) };
+    unsafe { SendMessageW(a.sci, WM_CHAR, 0x0D, 0) };
+    t.check("Markdown : Entrée continue la liste", &get().replace('\r', ""), "- a\n- ");
+    unsafe { SendMessageW(a.sci, WM_KEYDOWN, 0x0D, 0) };
+    unsafe { SendMessageW(a.sci, WM_CHAR, 0x0D, 0) };
+    t.check("Markdown : Entrée sur puce vide termine la liste", &get().replace('\r', ""), "- a\n\n");
+
+    // ----- paires automatiques + parenthèses assorties (en langage de code) -----
+    lang("Rust");
+    set("");
+    let typ = |c: char| unsafe { SendMessageW(a.sci, WM_CHAR, c as usize, 0) };
+    typ('(');
+    t.check("paire auto : ( ferme )", &get(), "()");
+    typ(')');
+    t.check("paire auto : retaper ) avale le doublon", &get(), "()");
+    set("");
+    typ('"');
+    t.check("paire auto : guillemet fermé", &get(), "\"\"");
+    set("f(a)");
+    send(a.sci, sci::SETSEL, 1, 1);
+    crate::assist::brace_highlight(a.sci);
+    t.check("parenthèses : assortie trouvée", &send(a.sci, 2353, 1, 0).to_string(), "3");
+    lang("Texte brut");
+    set("");
+    typ('(');
+    t.check("texte brut : pas de fermeture auto", &get(), "(");
+
     // ----- tous les langages : lexer chargé + au moins un octet coloré sur un échantillon -----
     for (i, l) in LANGS.iter().enumerate() {
         if l.lexer.is_empty() || l.lexer == "markdown" {
