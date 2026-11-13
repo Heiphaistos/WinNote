@@ -14,10 +14,10 @@ use windows_sys::Win32::{
 };
 
 #[derive(Clone, Copy, PartialEq)]
-pub enum Mode { Commands, Quick, Goto, InFiles }
+pub enum Mode { Commands, Quick, Goto, InFiles, Input }
 
 #[derive(Clone)]
-enum Act { Cmd(usize), Open(String), Tab(usize), Goto(isize), GotoIn(String, isize) }
+enum Act { Input(String), Cmd(usize), Open(String), Tab(usize), Goto(isize), GotoIn(String, isize) }
 
 struct Item { label: String, hint: String, act: Act }
 
@@ -32,6 +32,8 @@ struct Pal {
 }
 
 static mut PAL: Option<Pal> = None;
+#[allow(clippy::type_complexity)]
+static mut INPUT: Option<(String, Box<dyn Fn(String)>)> = None;
 
 fn pal() -> &'static mut Pal {
     #[allow(static_mut_refs)]
@@ -130,6 +132,10 @@ fn search_in_files(q: &str) -> Vec<Item> {
 fn refilter() {
     let p = pal();
     match p.mode {
+        Mode::Input => {
+            p.items = vec![Item { label: format!("Valider : {}", p.query), hint: String::new(), act: Act::Input(p.query.clone()) }];
+            p.shown = vec![0];
+        }
         Mode::Goto => {
             let max = send(app().sci, sci::GETLINECOUNT, 0, 0);
             p.items = vec![Item { label: format!("Aller à la ligne {} (1 – {})", p.query, max), hint: String::new(), act: Act::Goto(p.query.trim().parse::<isize>().map_or(-1, |n| (n - 1).clamp(0, max - 1))) }];
@@ -218,7 +224,22 @@ fn run(i: usize) {
             send(app().sci, sci::GOTOLINE, l as usize, 0);
         }
         Act::Goto(_) => {}
+        Act::Input(q) => {
+            #[allow(static_mut_refs)]
+            if let Some((_, f)) = unsafe { INPUT.take() } {
+                f(q);
+            }
+        }
     }
+}
+
+/// Saisie d'une ligne de texte (renommer, nouveau fichier...) avec la palette ; `f` reçoit le texte validé.
+pub fn input(prompt: &str, initial: &str, f: Box<dyn Fn(String)>) {
+    unsafe { INPUT = Some((prompt.to_string(), f)) };
+    open(Mode::Input);
+    pal().query = initial.to_string();
+    refilter();
+    unsafe { InvalidateRect(app().palette, null(), 0) };
 }
 
 fn paint(dc: HDC, rc: &RECT) {
@@ -245,16 +266,18 @@ fn paint(dc: HDC, rc: &RECT) {
             }
             DrawTextW(dc, v.as_ptr(), v.len() as i32, r, flags | DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX | DT_END_ELLIPSIS);
         };
-        let hint = match p.mode {
-            Mode::Commands => "Tapez une commande...",
-            Mode::Quick => "Ouvrir un fichier (onglets, récents, dossier)...",
-            Mode::Goto => "Numéro de ligne...",
-            Mode::InFiles => "Texte à chercher dans le dossier, puis Entrée...",
+        #[allow(static_mut_refs)]
+        let hint: String = match p.mode {
+            Mode::Commands => "Tapez une commande...".into(),
+            Mode::Quick => "Ouvrir un fichier (onglets, récents, dossier)...".into(),
+            Mode::Goto => "Numéro de ligne...".into(),
+            Mode::InFiles => "Texte à chercher dans le dossier, puis Entrée...".into(),
+            Mode::Input => INPUT.as_ref().map(|i| i.0.clone()).unwrap_or_default(),
         };
         let mut hr = RECT { left: scale(20), top: 0, right: rc.right - scale(20), bottom: head_h() };
         if p.query.is_empty() {
             SetTextColor(dc, blend(t.ui_fg, panel, 60));
-            draw(hint, &mut hr, 0);
+            draw(&hint, &mut hr, 0);
         } else {
             SetTextColor(dc, t.ui_fg);
             draw(&p.query, &mut hr, 0);

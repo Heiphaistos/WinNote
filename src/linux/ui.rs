@@ -355,6 +355,7 @@ pub fn on_command(id: usize) {
         REOPEN => edit::reopen_closed(),
         EXIT => quit(),
         RELOAD => edit::reload(),
+        FOLLOW => edit::toggle_follow(),
         REVEALFILE => {
             if let Some(p) = a.docs[doc_i].path.as_ref().and_then(|p| std::path::Path::new(p).parent().map(|d| d.to_path_buf())) {
                 textops::open_url(&p.to_string_lossy());
@@ -474,10 +475,11 @@ pub fn on_command(id: usize) {
             send(s, sci::CONVERTEOLS, m, 0);
             update_status();
         }
-        200..=204 => {
+        200..=218 => {
             a.docs[doc_i].enc = Enc::ALL[id - ENC];
             edit::refresh();
         }
+        230..=248 => edit::reload_with(Some(Enc::ALL[id - RENC])),
         300..=399 if id - LANG < LANGS.len() => {
             a.docs[doc_i].lang = id - LANG;
             edit::set_lexer(s, id - LANG);
@@ -580,6 +582,7 @@ fn build_menu(ag: &gtk::AccelGroup) -> gtk::MenuBar {
     add(&f, ag, "Enregistrer sous...", Some("<Primary><Shift>s"), SAVEAS);
     add(&f, ag, "Tout enregistrer", Some("<Primary><Alt>s"), SAVEALL);
     add(&f, ag, "Recharger depuis le disque", None, RELOAD);
+    add(&f, ag, "Suivre la fin du fichier (tail -f)", None, FOLLOW);
     add(&f, ag, "Imprimer...", Some("<Primary>p"), PRINT);
     add(&f, ag, "Ouvrir dans une nouvelle fenêtre", None, NEWWINDOW);
     f.append(&gtk::SeparatorMenuItem::new());
@@ -716,8 +719,17 @@ fn build_menu(ag: &gtk::AccelGroup) -> gtk::MenuBar {
         add(&lg, ag, la.name, None, LANG + i);
     }
     let en = sub(&bar, "Encodage");
-    for (i, e) in Enc::ALL.iter().enumerate() {
+    for (i, e) in Enc::ALL.iter().enumerate().take(5) {
         add(&en, ag, e.name(), None, ENC + i);
+    }
+    for (title, base, skip) in [("Autres encodages", ENC, 5), ("Recharger avec l'encodage", RENC, 0)] {
+        let m = gtk::Menu::new();
+        for (i, e) in Enc::ALL.iter().enumerate().skip(skip) {
+            add(&m, ag, e.name(), None, base + i);
+        }
+        let it = gtk::MenuItem::with_label(title);
+        it.set_submenu(Some(&m));
+        en.append(&it);
     }
     let h = sub(&bar, "?");
     add(&h, ag, "Statistiques du document", None, STATS);

@@ -221,7 +221,7 @@ pub fn run(log_path: &str) -> i32 {
     t.check_bool("lien [[note-x]] : chemin note-x.md à côté du fichier", a.docs[a.cur].path.as_deref().is_some_and(|p| p.ends_with("note-x.md")));
 
     // ----- enregistrement / réouverture avec encodages -----
-    for (i, enc) in crate::doc::Enc::ALL.iter().enumerate() {
+    for (i, enc) in crate::doc::Enc::ALL.iter().enumerate().take(5) {
         let p = dir.join(format!("enc{i}.txt")).to_string_lossy().to_string();
         cmds::open_or_create(&p);
         let src = if *enc == crate::doc::Enc::Ansi { "héllo wörld\nligne 2" } else { "héllo wörld €\nligne 2" };
@@ -345,6 +345,65 @@ autre").unwrap();
     set("");
     typ('(');
     t.check("texte brut : pas de fermeture auto", &get(), "(");
+
+    // ----- recherche : mode étendu, dans la sélection, tous les onglets, historique -----
+    findbar::open(true);
+    a.f_regex = false;
+    a.f_case = false;
+    set("a\nb a\nb");
+    unsafe {
+        SetWindowTextW(a.find_edit, w("a\\nb").as_ptr());
+        SetWindowTextW(a.repl_edit, w("X").as_ptr());
+    }
+    crate::findx::set_ext(true);
+    findbar::replace_all();
+    t.check("mode étendu : \\n remplacé", &get(), "X X");
+    crate::findx::set_ext(false);
+    set("a a a a");
+    send(a.sci, sci::SETSEL, 2, 5);
+    crate::findx::set_sel(Some((2, 5)));
+    unsafe {
+        SetWindowTextW(a.find_edit, w("a").as_ptr());
+        SetWindowTextW(a.repl_edit, w("bb").as_ptr());
+    }
+    findbar::replace_all();
+    t.check("remplacer dans la sélection seulement", &get(), "a bb bb a");
+    crate::findx::set_sel(None);
+    cmds::new_doc(a);
+    set("a");
+    cmds::new_doc(a);
+    set("a a");
+    unsafe { SetWindowTextW(a.repl_edit, w("c").as_ptr()) };
+    findbar::replace_all_tabs();
+    t.check("tous les onglets : onglet courant", &get(), "c c");
+    cmds::switch_to(a, a.cur - 1);
+    t.check("tous les onglets : onglet précédent", &get(), "c");
+    findbar::close();
+    // ----- fichier modifié sur le disque : rechargement automatique + suivi de fin -----
+    let ext = dir.join("externe.txt");
+    std::fs::write(&ext, "un").ok();
+    cmds::open_path(&ext.to_string_lossy());
+    t.check("fichier ouvert", &get(), "un");
+    std::thread::sleep(std::time::Duration::from_millis(30));
+    std::fs::write(&ext, "un\ndeux").ok();
+    cmds::check_external();
+    t.check("rechargement automatique d'un fichier modifié sur le disque", &get(), "un\ndeux");
+    cmds::on_command(FOLLOW);
+    std::thread::sleep(std::time::Duration::from_millis(30));
+    std::fs::write(&ext, "un\ndeux\ntrois").ok();
+    cmds::check_external();
+    t.check("suivi de fin : curseur en fin de fichier", &send(a.sci, sci::GETCURRENTPOS, 0, 0).to_string(), "13");
+    cmds::on_command(FOLLOW);
+
+    // ----- encodages : recharger en cyrillique, enregistrer sans perte -----
+    let cyr = dir.join("cyr.txt");
+    std::fs::write(&cyr, crate::doc::encode("Привет мир".as_bytes(), crate::doc::Enc::Win1251)).ok();
+    cmds::open_path(&cyr.to_string_lossy());
+    cmds::on_command(RENC + 6);
+    t.check("recharger avec l'encodage Cyrillique (Windows-1251)", &get(), "Привет мир");
+    t.check_bool("encodage mémorisé pour l'enregistrement", a.docs[a.cur].enc == crate::doc::Enc::Win1251);
+    t.check_bool("caractères sans perte en Windows-1251", crate::doc::lossless(get().as_bytes(), crate::doc::Enc::Win1251));
+    t.check_bool("perte détectée en ANSI (cyrillique)", !crate::doc::lossless(get().as_bytes(), crate::doc::Enc::Ansi));
 
     // ----- tous les langages : lexer chargé + au moins un octet coloré sur un échantillon -----
     for (i, l) in LANGS.iter().enumerate() {

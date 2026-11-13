@@ -36,7 +36,8 @@ pub const LINES: usize = 144;
 pub const WS: usize = 145;
 pub const TABNEXT: usize = 150;
 pub const TABPREV: usize = 151;
-pub const ENC: usize = 200; // 200..204
+pub const ENC: usize = 200; // 200..218
+pub const RENC: usize = 230; // 230..248 : recharger avec l'encodage
 pub const LANG: usize = 300; // 300..399
 pub const THEME: usize = 400; // 400..499
 pub const LAYOUT: usize = 500; // 500..599
@@ -97,6 +98,7 @@ pub const BACKLINKS: usize = 854;
 pub const SPLIT: usize = 855;
 pub const SPELL: usize = 856;
 pub const DWRITE: usize = 857;
+pub const FOLLOW: usize = 858;
 pub const SPELLLANG: usize = 860; // 860..864
 pub const SPELLFIX: usize = 900; // 900..904
 pub const SPELLADD: usize = 905;
@@ -122,7 +124,7 @@ pub const SPELLIGNORE: usize = 906;
 pub static PALETTE_CMDS: &[(usize, &str)] = &[
     (NEW, "Fichier : nouvel onglet"), (OPEN, "Fichier : ouvrir..."), (OPENFOLDER, "Fichier : ouvrir un dossier..."), (SAVE, "Fichier : enregistrer"),
     (SAVEAS, "Fichier : enregistrer sous..."), (SAVEALL, "Fichier : tout enregistrer"), (PRINT, "Fichier : imprimer..."), (NEWWINDOW, "Fichier : ouvrir dans une nouvelle fenêtre"), (BACKLINKS, "Affichage : liens entrants (backlinks)"), (SPLIT, "Affichage : vue scindée"), (SPELL, "Édition : correcteur orthographique"), (DWRITE, "Format : rendu DirectWrite (texte plus lisse, +35 Mo de mémoire)"), (CLOSE, "Fichier : fermer l'onglet"), (CLOSEOTHERS, "Fichier : fermer les autres onglets"),
-    (CLOSEALL, "Fichier : fermer tous les onglets"), (REOPEN, "Fichier : rouvrir l'onglet fermé"), (RELOAD, "Fichier : recharger depuis le disque"),
+    (CLOSEALL, "Fichier : fermer tous les onglets"), (REOPEN, "Fichier : rouvrir l'onglet fermé"), (RELOAD, "Fichier : recharger depuis le disque"), (FOLLOW, "Fichier : suivre la fin du fichier (tail -f)"),
     (REVEALFILE, "Fichier : afficher dans l'explorateur"), (COPYPATH, "Fichier : copier le chemin"), (BROWSER, "Fichier : ouvrir dans le navigateur"),
     (FIND, "Rechercher"), (REPLACE, "Remplacer"), (FINDINFILES, "Rechercher dans le dossier ouvert"), (GOTO, "Aller à la ligne..."), (QUICKOPEN, "Ouverture rapide (onglets, récents, dossier)"),
     (MOVEUP, "Lignes : déplacer vers le haut"), (MOVEDOWN, "Lignes : déplacer vers le bas"), (DUPLINE, "Lignes : dupliquer"), (DELLINE, "Lignes : supprimer"),

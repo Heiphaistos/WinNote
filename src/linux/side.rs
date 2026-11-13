@@ -86,6 +86,32 @@ impl Side {
                 }
             }
         });
+        tree.connect_button_press_event(|t, e| {
+            if e.button() == 3 && app().side.mode == 0 {
+                if let Some((Some(p), _, _, _)) = t.path_at_pos(e.position().0 as i32, e.position().1 as i32) {
+                    t.selection().select_path(&p);
+                } else {
+                    t.selection().unselect_all();
+                }
+                context_menu(e);
+                return gtk::glib::Propagation::Stop;
+            }
+            gtk::glib::Propagation::Proceed
+        });
+        tree.connect_key_press_event(|_, e| {
+            if app().side.mode != 0 {
+                return gtk::glib::Propagation::Proceed;
+            }
+            let k = e.keyval();
+            if k == gtk::gdk::keys::constants::F2 {
+                file_action(A_RENAME);
+            } else if k == gtk::gdk::keys::constants::Delete {
+                file_action(A_DELETE);
+            } else {
+                return gtk::glib::Propagation::Proceed;
+            }
+            gtk::glib::Propagation::Stop
+        });
         Side { root, tree, store, btns, mode: 0 }
     }
 }
@@ -265,4 +291,149 @@ pub fn backlink_count() -> usize {
 
 pub fn row_count() -> usize {
     count(None, &|_| true)
+}
+
+// ---------- opérations sur les fichiers (menu contextuel, F2, Suppr) ----------
+
+const A_NEWFILE: u8 = 1;
+const A_NEWDIR: u8 = 2;
+const A_RENAME: u8 = 3;
+const A_DUP: u8 = 4;
+const A_DELETE: u8 = 5;
+const A_MOVE: u8 = 6;
+const A_COPYPATH: u8 = 7;
+const A_REFRESH: u8 = 8;
+
+fn selected() -> Option<(String, bool)> {
+    let (m, it) = app().side.tree.selection().selected()?;
+    Some((col_of::<String>(&m, &it, PATH), col_of::<bool>(&m, &it, DIR)))
+}
+
+fn context_menu(e: &gtk::gdk::EventButton) {
+    let on = selected().is_some_and(|s| !s.0.is_empty());
+    let menu = gtk::Menu::new();
+    let mut add = |label: &str, act: u8, enabled: bool| {
+        let it = gtk::MenuItem::with_label(label);
+        it.set_sensitive(enabled);
+        it.connect_activate(move |_| file_action(act));
+        menu.append(&it);
+    };
+    add("Nouveau fichier...", A_NEWFILE, true);
+    add("Nouveau dossier...", A_NEWDIR, true);
+    add("Renommer (F2)", A_RENAME, on);
+    add("Dupliquer", A_DUP, on);
+    add("Déplacer vers...", A_MOVE, on);
+    add("Supprimer (Suppr)", A_DELETE, on);
+    add("Copier le chemin", A_COPYPATH, on);
+    add("Actualiser", A_REFRESH, true);
+    menu.show_all();
+    menu.popup_at_pointer(Some(e));
+}
+
+fn ask_name(title: &str, initial: &str) -> Option<String> {
+    let a = app();
+    let d = gtk::Dialog::with_buttons(Some(title), Some(&a.win), gtk::DialogFlags::MODAL, &[("Annuler", gtk::ResponseType::Cancel), ("OK", gtk::ResponseType::Ok)]);
+    let e = gtk::Entry::new();
+    e.set_text(initial);
+    e.set_activates_default(true);
+    d.set_default_response(gtk::ResponseType::Ok);
+    d.content_area().pack_start(&e, true, true, 8);
+    d.content_area().show_all();
+    let r = d.run();
+    let t = e.text().to_string();
+    d.close();
+    (r == gtk::ResponseType::Ok).then_some(t)
+}
+
+fn confirm(msg: &str) -> bool {
+    let a = app();
+    let d = gtk::MessageDialog::new(Some(&a.win), gtk::DialogFlags::MODAL, gtk::MessageType::Question, gtk::ButtonsType::YesNo, msg);
+    let r = d.run();
+    d.close();
+    r == gtk::ResponseType::Yes
+}
+
+fn retarget(old: &str, new: &str) {
+    for t in app().docs.iter_mut() {
+        if let Some(p) = &t.path {
+            if p == old {
+                t.path = Some(new.to_string());
+            } else if let Some(rest) = p.strip_prefix(&format!("{old}/")) {
+                t.path = Some(format!("{new}/{rest}"));
+            }
+        }
+    }
+    edit::refresh();
+}
+
+fn done(r: Result<String, String>, open: bool) {
+    match r {
+        Ok(p) => {
+            show_files();
+            if open && !std::path::Path::new(&p).is_dir() {
+                edit::open_path(&p);
+            }
+        }
+        Err(e) => edit::msg_box(&e),
+    }
+}
+
+pub fn file_action(act: u8) {
+    let a = app();
+    let sel = selected();
+    let root = a.root.clone().unwrap_or_default();
+    let dir = match &sel {
+        Some((p, true)) => p.clone(),
+        Some((p, false)) => std::path::Path::new(p).parent().map(|d| d.to_string_lossy().into_owned()).unwrap_or(root.clone()),
+        None => root.clone(),
+    };
+    let name_of = |p: &str| p.rsplit('/').next().unwrap_or(p).to_string();
+    match (act, sel) {
+        (A_NEWFILE, _) if !dir.is_empty() => {
+            if let Some(n) = ask_name("Nouveau fichier", "") {
+                done(crate::fileops::new_file(&dir, &n), true);
+            }
+        }
+        (A_NEWDIR, _) if !dir.is_empty() => {
+            if let Some(n) = ask_name("Nouveau dossier", "") {
+                done(crate::fileops::new_dir(&dir, &n), false);
+            }
+        }
+        (A_RENAME, Some((p, _))) if p != root => {
+            if let Some(n) = ask_name("Renommer", &name_of(&p)) {
+                let r = crate::fileops::rename(&p, &n);
+                if let Ok(np) = &r {
+                    retarget(&p, np);
+                }
+                done(r, false);
+            }
+        }
+        (A_DUP, Some((p, _))) if p != root => done(crate::fileops::duplicate(&p), true),
+        (A_MOVE, Some((p, _))) if p != root => {
+            if let Some(d) = edit::pick_folder() {
+                let r = crate::fileops::move_to(&p, &d);
+                if let Ok(np) = &r {
+                    retarget(&p, np);
+                }
+                done(r, false);
+            }
+        }
+        (A_DELETE, Some((p, _))) if p != root => {
+            // corbeille du bureau si `gio` est là, sinon suppression définitive (confirmée)
+            let trash = std::process::Command::new("gio").args(["trash", &p]).status().is_ok_and(|s| s.success());
+            if trash {
+                show_files();
+            } else if confirm(&format!("Supprimer définitivement « {} » ?", name_of(&p))) {
+                match crate::fileops::remove(&p) {
+                    Ok(()) => show_files(),
+                    Err(e) => edit::msg_box(&e),
+                }
+            }
+        }
+        (A_COPYPATH, Some((p, _))) => {
+            gtk::Clipboard::get(&gtk::gdk::SELECTION_CLIPBOARD).set_text(&p);
+        }
+        (A_REFRESH, _) => show_files(),
+        _ => {}
+    }
 }

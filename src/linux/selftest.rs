@@ -124,7 +124,7 @@ pub fn run(log_path: &str) -> i32 {
     // encodages
     let dir = std::env::temp_dir().join(format!("wn_selftest_{}", std::process::id()));
     let _ = std::fs::create_dir_all(&dir);
-    for (i, enc) in Enc::ALL.iter().enumerate() {
+    for (i, enc) in Enc::ALL.iter().enumerate().take(5) {
         let p = dir.join(format!("enc{i}.txt")).to_string_lossy().to_string();
         edit::open_or_create(&p);
         let src = if *enc == Enc::Ansi { "héllo wörld\nligne 2" } else { "héllo wörld €\nligne 2" };

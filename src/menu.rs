@@ -48,6 +48,7 @@ pub fn build() -> Menus {
         add(f, SAVEALL, "Tout enregistrer\tCtrl+Alt+S");
         add(f, PRINT, "Imprimer...\tCtrl+P");
         add(f, RELOAD, "Recharger depuis le disque");
+        add(f, FOLLOW, "Suivre la fin du fichier (tail -f)");
         sep(f);
         add(f, REVEALFILE, "Afficher dans l'explorateur");
         add(f, COPYPATH, "Copier le chemin");
@@ -186,8 +187,17 @@ pub fn build() -> Menus {
             add(lg, LANG + i, la.name);
         }
         let en = sub(&both, "Encodage");
-        for (i, e) in Enc::ALL.iter().enumerate() {
+        for (i, e) in Enc::ALL.iter().enumerate().take(5) {
             add(en, ENC + i, e.name());
+        }
+        let other = sub(&[en], "Autres encodages");
+        for (i, e) in Enc::ALL.iter().enumerate().skip(5) {
+            add(other, ENC + i, e.name());
+        }
+        sep(en);
+        let re = sub(&[en], "Recharger avec l'encodage");
+        for (i, e) in Enc::ALL.iter().enumerate() {
+            add(re, RENC + i, e.name());
         }
         let h = sub(&both, "?");
         add(h, STATS, "Statistiques du document");

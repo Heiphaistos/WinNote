@@ -19,7 +19,7 @@ const EN_CHANGE: usize = 0x0300;
 const INDIC: usize = 8;
 
 #[derive(Clone, Copy, PartialEq)]
-enum Btn { Case, Word, Regex, Prev, Next, Close, Replace, ReplaceAll }
+enum Btn { Case, Word, Regex, Ext, Sel, Prev, Next, Close, Replace, ReplaceAll, AllTabs }
 
 pub fn height() -> i32 {
     let a = app();
@@ -30,7 +30,7 @@ fn buttons() -> Vec<(Btn, RECT)> {
     let (s, mut x) = (scale(30), scale(12) + scale(320) + scale(10));
     let top = scale(9);
     let mut v = Vec::new();
-    for b in [Btn::Case, Btn::Word, Btn::Regex, Btn::Prev, Btn::Next] {
+    for b in [Btn::Case, Btn::Word, Btn::Regex, Btn::Ext, Btn::Sel, Btn::Prev, Btn::Next] {
         v.push((b, RECT { left: x, top, right: x + s, bottom: top + scale(26) }));
         x += s + scale(2);
     }
@@ -43,6 +43,7 @@ fn buttons() -> Vec<(Btn, RECT)> {
         let x0 = scale(12) + scale(320) + scale(10);
         v.push((Btn::Replace, RECT { left: x0, top: top2, right: x0 + scale(96), bottom: top2 + scale(26) }));
         v.push((Btn::ReplaceAll, RECT { left: x0 + scale(100), top: top2, right: x0 + scale(100) + scale(70), bottom: top2 + scale(26) }));
+        v.push((Btn::AllTabs, RECT { left: x0 + scale(174), top: top2, right: x0 + scale(174) + scale(130), bottom: top2 + scale(26) }));
     }
     v
 }
@@ -93,7 +94,11 @@ fn search(st: isize, en: isize, what: &[u8]) -> isize {
 }
 
 fn query() -> Vec<u8> {
-    text_of(app().find_edit).into_bytes()
+    crate::findx::prep(text_of(app().find_edit).into_bytes(), app().f_regex)
+}
+
+fn replacement() -> Vec<u8> {
+    crate::findx::prep(text_of(app().repl_edit).into_bytes(), app().f_regex)
 }
 
 fn find_from(from_sel_start: bool, down: bool) -> bool {
@@ -103,12 +108,12 @@ fn find_from(from_sel_start: bool, down: bool) -> bool {
         mark_all();
         return false;
     }
-    let len = send(s, sci::GETLENGTH, 0, 0);
+    let (lo, hi) = crate::findx::range(send(s, sci::GETLENGTH, 0, 0));
     send(s, sci::SETSEARCHFLAGS, flags(), 0);
-    let (ss, se) = (send(s, sci::GETSELSTART, 0, 0), send(s, sci::GETSELEND, 0, 0));
-    let mut r = if down { search(if from_sel_start { ss } else { se }, len, &what) } else { search(ss, 0, &what) };
+    let (ss, se) = (send(s, sci::GETSELSTART, 0, 0).clamp(lo, hi), send(s, sci::GETSELEND, 0, 0).clamp(lo, hi));
+    let mut r = if down { search(if from_sel_start { ss } else { se }, hi, &what) } else { search(ss, lo, &what) };
     if r < 0 {
-        r = if down { search(0, len, &what) } else { search(len, 0, &what) };
+        r = if down { search(lo, hi, &what) } else { search(hi, lo, &what) };
     }
     if r >= 0 {
         let (ts, te) = (send(s, sci::GETTARGETSTART, 0, 0), send(s, sci::GETTARGETEND, 0, 0));
@@ -134,11 +139,12 @@ pub fn mark_all() {
     let len = send(s, sci::GETLENGTH, 0, 0);
     send(s, sci::SETINDICCURRENT, INDIC, 0);
     send(s, sci::INDICCLEAR, 0, len);
+    let (lo, len) = crate::findx::range(len);
     a.find_count = 0;
     let what = query();
     if !what.is_empty() && a.find_vis {
         send(s, sci::SETSEARCHFLAGS, flags(), 0);
-        let mut pos = 0;
+        let mut pos = lo;
         while a.find_count < 5000 {
             if search(pos, len, &what) < 0 {
                 break;
@@ -178,7 +184,7 @@ pub fn replace_one() {
     let a = app();
     let s = a.sci;
     let what = query();
-    let rep = text_of(a.repl_edit).into_bytes();
+    let rep = replacement();
     send(s, sci::SETSEARCHFLAGS, flags(), 0);
     let (ss, se) = (send(s, sci::GETSELSTART, 0, 0), send(s, sci::GETSELEND, 0, 0));
     if !what.is_empty() && search(ss, se, &what) == ss && send(s, sci::GETTARGETEND, 0, 0) == se {
@@ -189,30 +195,61 @@ pub fn replace_one() {
     find_from(false, true);
 }
 
+/// Remplace dans le document courant (ou la sélection mémorisée) ; renvoie le nombre de remplacements.
+fn replace_in_doc(what: &[u8], rep: &[u8]) -> u32 {
+    let s = app().sci;
+    send(s, sci::SETSEARCHFLAGS, flags(), 0);
+    send(s, sci::BEGINUNDO, 0, 0);
+    let (lo, _) = crate::findx::range(send(s, sci::GETLENGTH, 0, 0));
+    let (mut pos, mut n) = (lo, 0);
+    loop {
+        let (_, hi) = crate::findx::range(send(s, sci::GETLENGTH, 0, 0));
+        if pos > hi || search(pos, hi, what) < 0 {
+            break;
+        }
+        let (ts, te0) = (send(s, sci::GETTARGETSTART, 0, 0), send(s, sci::GETTARGETEND, 0, 0));
+        let before = send(s, sci::GETLENGTH, 0, 0);
+        replace_target(rep);
+        let e = send(s, sci::GETTARGETEND, 0, 0);
+        crate::findx::shift_end(send(s, sci::GETLENGTH, 0, 0) - before);
+        pos = if e == ts { e + 1 } else { e };
+        let _ = te0;
+        n += 1;
+    }
+    send(s, sci::ENDUNDO, 0, 0);
+    n
+}
+
 pub fn replace_all() {
-    let a = app();
-    let s = a.sci;
     let what = query();
     if what.is_empty() {
         return;
     }
-    let rep = text_of(a.repl_edit).into_bytes();
-    send(s, sci::SETSEARCHFLAGS, flags(), 0);
-    send(s, sci::BEGINUNDO, 0, 0);
-    let (mut pos, mut n) = (0isize, 0);
-    loop {
-        let len = send(s, sci::GETLENGTH, 0, 0);
-        if pos > len || search(pos, len, &what) < 0 {
-            break;
-        }
-        replace_target(&rep);
-        let e = send(s, sci::GETTARGETEND, 0, 0);
-        pos = if e == send(s, sci::GETTARGETSTART, 0, 0) { e + 1 } else { e };
-        n += 1;
-    }
-    send(s, sci::ENDUNDO, 0, 0);
+    let n = replace_in_doc(&what, &replacement());
     mark_all();
     crate::cmds::msg_box(&format!("{n} remplacement(s) effectué(s)."));
+}
+
+/// Remplace dans tous les onglets ouverts.
+pub fn replace_all_tabs() {
+    let what = query();
+    if what.is_empty() {
+        return;
+    }
+    let (a, rep, keep) = (app(), replacement(), app().cur);
+    crate::findx::set_sel(None);
+    let (mut n, mut docs) = (0, 0);
+    for i in 0..a.docs.len() {
+        crate::cmds::switch_to(a, i);
+        let k = replace_in_doc(&what, &rep);
+        if k > 0 {
+            docs += 1;
+            n += k;
+        }
+    }
+    crate::cmds::switch_to(a, keep);
+    mark_all();
+    crate::cmds::msg_box(&format!("{n} remplacement(s) dans {docs} onglet(s)."));
 }
 
 pub fn open(replace: bool) {
@@ -260,7 +297,14 @@ pub fn pretranslate(m: &MSG) -> bool {
     }
     let shift = unsafe { GetKeyState(VK_SHIFT as i32) } < 0;
     match m.wParam as u16 {
+        VK_UP | VK_DOWN if m.hwnd == a.find_edit => {
+            if let Some(h) = crate::findx::hist_step(m.wParam as u16 == VK_UP) {
+                unsafe { SetWindowTextW(a.find_edit, w(&h).as_ptr()) };
+            }
+            true
+        }
         VK_RETURN => {
+            crate::findx::hist_push(&text_of(a.find_edit));
             if m.hwnd == a.repl_edit {
                 replace_one();
             } else {
@@ -278,7 +322,7 @@ pub fn pretranslate(m: &MSG) -> bool {
 
 fn toggled(b: Btn) -> bool {
     let a = app();
-    match b { Btn::Case => a.f_case, Btn::Word => a.f_word, Btn::Regex => a.f_regex, _ => false }
+    match b { Btn::Case => a.f_case, Btn::Word => a.f_word, Btn::Regex => a.f_regex, Btn::Ext => crate::findx::ext(), Btn::Sel => crate::findx::in_sel(), _ => false }
 }
 
 fn paint(dc: HDC, rc: &RECT) {
@@ -313,10 +357,10 @@ fn paint(dc: HDC, rc: &RECT) {
             let on = toggled(b);
             if on {
                 round(&r, hot, t.accent);
-            } else if matches!(b, Btn::Replace | Btn::ReplaceAll) {
+            } else if matches!(b, Btn::Replace | Btn::ReplaceAll | Btn::AllTabs) {
                 round(&r, blend(t.ui_bg, t.ui_fg, 8), border);
             }
-            let label = match b { Btn::Case => "Aa", Btn::Word => "ab", Btn::Regex => ".*", Btn::Prev => "↑", Btn::Next => "↓", Btn::Close => "×", Btn::Replace => "Remplacer", Btn::ReplaceAll => "Tout" };
+            let label = match b { Btn::Case => "Aa", Btn::Word => "ab", Btn::Regex => ".*", Btn::Ext => "\\n", Btn::Sel => "▭", Btn::Prev => "↑", Btn::Next => "↓", Btn::Close => "×", Btn::Replace => "Remplacer", Btn::ReplaceAll => "Tout", Btn::AllTabs => "Tous les onglets" };
             SetTextColor(dc, t.ui_fg);
             let mut rr = r;
             let v: Vec<u16> = label.encode_utf16().collect();
@@ -374,13 +418,19 @@ pub unsafe extern "system" fn proc_(h: HWND, m: u32, wp: WPARAM, lp: LPARAM) -> 
                         Btn::Case => a.f_case = !a.f_case,
                         Btn::Word => a.f_word = !a.f_word,
                         Btn::Regex => a.f_regex = !a.f_regex,
+                        Btn::Ext => crate::findx::set_ext(!crate::findx::ext()),
+                        Btn::Sel => {
+                            let (ss, se) = (send(a.sci, sci::GETSELSTART, 0, 0), send(a.sci, sci::GETSELEND, 0, 0));
+                            crate::findx::set_sel(if crate::findx::in_sel() || se <= ss { None } else { Some((ss, se)) });
+                        }
+                        Btn::AllTabs => replace_all_tabs(),
                         Btn::Prev => drop(find_from(false, false)),
                         Btn::Next => drop(find_from(false, true)),
                         Btn::Close => close(),
                         Btn::Replace => replace_one(),
                         Btn::ReplaceAll => replace_all(),
                     }
-                    if matches!(b, Btn::Case | Btn::Word | Btn::Regex) {
+                    if matches!(b, Btn::Case | Btn::Word | Btn::Regex | Btn::Ext | Btn::Sel) {
                         find_from(true, true);
                     }
                     InvalidateRect(h, null(), 0);

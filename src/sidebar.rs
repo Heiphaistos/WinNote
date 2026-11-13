@@ -17,6 +17,8 @@ const NM_DBLCLK_: u32 = -3i32 as u32;
 const NM_RETURN_: u32 = -4i32 as u32;
 const TVN_SELCHANGED_: u32 = -451i32 as u32;
 const TVN_ITEMEXPANDING_: u32 = -454i32 as u32;
+const NM_RCLICK_: u32 = -5i32 as u32;
+const TVN_KEYDOWN_: u32 = -412i32 as u32;
 
 struct Node { path: String, dir: bool, loaded: bool, line: isize }
 static mut NODES: Vec<Node> = Vec::new();
@@ -276,6 +278,14 @@ pub unsafe extern "system" fn proc_(h: HWND, m: u32, wp: WPARAM, lp: LPARAM) -> 
             let hdr = &*(lp as *const NMHDR);
             match hdr.code {
                 NM_DBLCLK_ | NM_RETURN_ => activate(),
+                NM_RCLICK_ if app().side_mode == 0 => context_menu(),
+                TVN_KEYDOWN_ if app().side_mode == 0 => {
+                    match (*(lp as *const NMTVKEYDOWN)).wVKey {
+                        0x71 => file_action(A_RENAME),
+                        0x2E => file_action(A_DELETE),
+                        _ => {}
+                    }
+                }
                 TVN_SELCHANGED_ if app().side_mode == 1 => activate_outline_quiet(),
                 TVN_ITEMEXPANDING_ => {
                     let nm = &*(lp as *const NMTREEVIEWW);
@@ -304,4 +314,147 @@ fn activate_outline_quiet() {
 pub fn selftest_backlinks() -> usize {
     show_backlinks();
     nodes().iter().filter(|n| !n.path.is_empty()).count()
+}
+
+// ---------- opérations sur les fichiers (menu contextuel, F2, Suppr) ----------
+
+const A_NEWFILE: usize = 1;
+const A_NEWDIR: usize = 2;
+const A_RENAME: usize = 3;
+const A_DUP: usize = 4;
+const A_DELETE: usize = 5;
+const A_MOVE: usize = 6;
+const A_REVEAL: usize = 7;
+const A_COPYPATH: usize = 8;
+const A_REFRESH: usize = 9;
+
+fn context_menu() {
+    let a = app();
+    unsafe {
+        let mut pt = zeroed();
+        GetCursorPos(&mut pt);
+        let mut sp = pt;
+        windows_sys::Win32::Graphics::Gdi::ScreenToClient(a.tree, &mut sp);
+        let hit = TVHITTESTINFO { pt: sp, flags: 0, hItem: 0 };
+        let it = SendMessageW(a.tree, 0x1111, 0, &hit as *const _ as isize); // TVM_HITTEST
+        if it != 0 {
+            SendMessageW(a.tree, 0x110B, 9, it); // TVM_SELECTITEM(TVGN_CARET)
+        }
+        let on_item = it != 0;
+        let m = CreatePopupMenu();
+        let add = |id: usize, t: &str, on: bool| {
+            AppendMenuW(m, MF_STRING | if on { 0 } else { MF_GRAYED }, id, w(t).as_ptr());
+        };
+        add(A_NEWFILE, "Nouveau fichier...", true);
+        add(A_NEWDIR, "Nouveau dossier...", true);
+        AppendMenuW(m, MF_SEPARATOR, 0, null());
+        add(A_RENAME, "Renommer	F2", on_item);
+        add(A_DUP, "Dupliquer", on_item);
+        add(A_MOVE, "Déplacer vers...", on_item);
+        add(A_DELETE, "Supprimer (corbeille)	Suppr", on_item);
+        AppendMenuW(m, MF_SEPARATOR, 0, null());
+        add(A_REVEAL, "Afficher dans l'explorateur", on_item);
+        add(A_COPYPATH, "Copier le chemin", on_item);
+        add(A_REFRESH, "Actualiser", true);
+        let id = TrackPopupMenu(m, TPM_RETURNCMD | TPM_RIGHTBUTTON, pt.x, pt.y, 0, a.hwnd, null());
+        DestroyMenu(m);
+        if id > 0 {
+            file_action(id as usize);
+        }
+    }
+}
+
+fn fail(e: String) {
+    crate::cmds::msg_box(&e);
+}
+
+fn after_change(open: Option<String>) {
+    show_files();
+    if let Some(p) = open {
+        crate::cmds::open_path(&p);
+    }
+}
+
+/// Met à jour les onglets dont le fichier (ou son dossier) vient de changer de chemin.
+fn retarget(old: &str, new: &str) {
+    for d in app().docs.iter_mut() {
+        if let Some(p) = &d.path {
+            if p == old {
+                d.path = Some(new.to_string());
+            } else if let Some(rest) = p.strip_prefix(&format!("{old}\\")) {
+                d.path = Some(format!("{new}\\{rest}"));
+            }
+        }
+    }
+    crate::cmds::refresh();
+}
+
+fn recycle(path: &str) -> bool {
+    let mut from: Vec<u16> = path.encode_utf16().collect();
+    from.extend([0, 0]);
+    let mut op: windows_sys::Win32::UI::Shell::SHFILEOPSTRUCTW = unsafe { zeroed() };
+    op.wFunc = 3; // FO_DELETE
+    op.pFrom = from.as_ptr();
+    op.fFlags = 0x40 | 0x10 | 0x4; // ALLOWUNDO | NOCONFIRMATION | SILENT
+    unsafe { windows_sys::Win32::UI::Shell::SHFileOperationW(&mut op) == 0 && op.fAnyOperationsAborted == 0 }
+}
+
+fn file_action(act: usize) {
+    let a = app();
+    let sel = selected_node().map(|n| (nodes()[n].path.clone(), nodes()[n].dir));
+    let root = a.root.clone().unwrap_or_default();
+    let target_dir = match &sel {
+        Some((p, true)) => p.clone(),
+        Some((p, false)) => std::path::Path::new(p).parent().map(|d| d.to_string_lossy().into_owned()).unwrap_or(root.clone()),
+        None => root.clone(),
+    };
+    let name_of = |p: &str| p.rsplit(['\\', '/']).next().unwrap_or(p).to_string();
+    match (act, sel) {
+        (A_NEWFILE, _) if !target_dir.is_empty() => crate::palette::input("Nom du nouveau fichier (Entrée pour créer)", "", Box::new(move |n| match crate::fileops::new_file(&target_dir, &n) {
+            Ok(p) => after_change(Some(p)),
+            Err(e) => fail(e),
+        })),
+        (A_NEWDIR, _) if !target_dir.is_empty() => crate::palette::input("Nom du nouveau dossier (Entrée pour créer)", "", Box::new(move |n| match crate::fileops::new_dir(&target_dir, &n) {
+            Ok(_) => after_change(None),
+            Err(e) => fail(e),
+        })),
+        (A_RENAME, Some((p, _))) => crate::palette::input("Nouveau nom (Entrée pour renommer)", &name_of(&p), Box::new(move |n| match crate::fileops::rename(&p, &n) {
+            Ok(np) => {
+                retarget(&p, &np);
+                after_change(None)
+            }
+            Err(e) => fail(e),
+        })),
+        (A_DUP, Some((p, _))) => match crate::fileops::duplicate(&p) {
+            Ok(np) => after_change(Some(np).filter(|x| !std::path::Path::new(x).is_dir())),
+            Err(e) => fail(e),
+        },
+        (A_MOVE, Some((p, _))) => {
+            if let Some(d) = crate::cmds::pick_folder() {
+                match crate::fileops::move_to(&p, &d) {
+                    Ok(np) => {
+                        retarget(&p, &np);
+                        after_change(None)
+                    }
+                    Err(e) => fail(e),
+                }
+            }
+        }
+        (A_DELETE, Some((p, _))) if p != root => {
+            let ok = unsafe { MessageBoxW(a.hwnd, w(&format!("Mettre « {} » à la corbeille ?", name_of(&p))).as_ptr(), w("WinNote").as_ptr(), MB_YESNO | MB_ICONQUESTION) } == IDYES;
+            if ok {
+                if recycle(&p) {
+                    after_change(None)
+                } else {
+                    fail("Impossible de mettre l'élément à la corbeille.".into())
+                }
+            }
+        }
+        (A_REVEAL, Some((p, _))) => {
+            let _ = std::process::Command::new("explorer.exe").arg(format!("/select,{p}")).spawn();
+        }
+        (A_COPYPATH, Some((p, _))) => crate::cmds::copy_text(&p),
+        (A_REFRESH, _) => show_files(),
+        _ => {}
+    }
 }

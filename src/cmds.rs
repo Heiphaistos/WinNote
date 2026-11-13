@@ -213,6 +213,7 @@ pub fn refresh() {
             chk(FOLDMARGIN, a.fold);
             chk(ZEN, a.zen);
             chk(TOPMOST, a.topmost);
+            chk(FOLLOW, a.docs.get(a.cur).is_some_and(|d| d.follow));
             chk(READONLY, send(a.sci, sci::GETREADONLY, 0, 0) != 0);
             chk(AUTOUPDATE, a.auto_update);
             let si = crate::spell::LANGS.iter().position(|l| l.0 == a.spell_lang).unwrap_or(0);
@@ -220,7 +221,7 @@ pub fn refresh() {
             CheckMenuRadioItem(m, THEME as u32, (THEME + THEMES.len() - 1) as u32, (THEME + a.theme) as u32, MF_BYCOMMAND);
             CheckMenuRadioItem(m, LANG as u32, (LANG + LANGS.len() - 1) as u32, (LANG + d.lang) as u32, MF_BYCOMMAND);
             let ei = Enc::ALL.iter().position(|&e| e == d.enc).unwrap_or(0);
-            CheckMenuRadioItem(m, ENC as u32, (ENC + 4) as u32, (ENC + ei) as u32, MF_BYCOMMAND);
+            CheckMenuRadioItem(m, ENC as u32, (ENC + Enc::ALL.len() - 1) as u32, (ENC + ei) as u32, MF_BYCOMMAND);
             let em = send(a.sci, sci::GETEOLMODE, 0, 0) as usize;
             CheckMenuRadioItem(m, EOL as u32, (EOL + 2) as u32, (EOL + em) as u32, MF_BYCOMMAND);
             CheckMenuRadioItem(m, CHROME_WIN as u32, CHROME_MAC as u32, (CHROME_WIN + a.chrome as usize) as u32, MF_BYCOMMAND);
@@ -347,7 +348,7 @@ pub fn push_doc_full(a: &mut App, path: Option<String>, text: Option<(Vec<u8>, E
     };
     let enc = text.as_ref().map_or(Enc::Utf8, |t| t.1);
     let mt = path.as_deref().and_then(mtime);
-    a.docs.push(Doc { ptr, path, enc, lang, caret: 0, first: 0, untitled, dirty, mtime: mt });
+    a.docs.push(Doc { ptr, path, enc, lang, caret: 0, first: 0, untitled, dirty, follow: false, mtime: mt });
     a.cur = a.docs.len() - 1;
     send(a.sci, sci::SETDOCPTR, 0, ptr);
     send(a.sci, sci::SETCODEPAGE, 65001, 0);
@@ -523,7 +524,7 @@ fn file_dialog(save: bool, name: &str) -> Vec<String> {
     }
 }
 
-fn pick_folder() -> Option<String> {
+pub fn pick_folder() -> Option<String> {
     unsafe {
         let title = w("Choisir un dossier");
         let mut name = vec![0u16; 260];
@@ -550,7 +551,13 @@ pub fn save_doc(a: &mut App, i: usize, as_new: bool) -> bool {
             None => return false,
         },
     };
-    let bytes = doc::encode(&get_text(a), a.docs[i].enc);
+    let text = get_text(a);
+    if !doc::lossless(&text, a.docs[i].enc)
+        && unsafe { MessageBoxW(a.hwnd, w(&format!("Certains caractères n'existent pas en {} et seront remplacés par « ? ». Enregistrer quand même ?", a.docs[i].enc.name())).as_ptr(), w("WinNote").as_ptr(), MB_YESNO | MB_ICONWARNING) } != IDYES
+    {
+        return false;
+    }
+    let bytes = doc::encode(&text, a.docs[i].enc);
     if let Err(e) = std::fs::write(&path, bytes) {
         msg_box(&format!("Échec de l'enregistrement : {e}"));
         return false;
@@ -571,10 +578,21 @@ pub fn save_doc(a: &mut App, i: usize, as_new: bool) -> bool {
 }
 
 fn reload(a: &mut App) {
+    reload_with(a, None)
+}
+
+/// Recharge le fichier ; `enc` force l'encodage (sinon détection automatique).
+fn reload_with(a: &mut App, enc: Option<Enc>) {
     let Some(p) = a.docs[a.cur].path.clone() else { return };
+    if enc.is_some() && a.docs[a.cur].dirty && unsafe { MessageBoxW(a.hwnd, w("Les modifications non enregistrées seront perdues. Recharger ?").as_ptr(), w("WinNote").as_ptr(), MB_YESNO | MB_ICONQUESTION) } != IDYES {
+        return;
+    }
     match std::fs::read(&p) {
         Ok(b) => {
-            let (t, e) = doc::decode(&b);
+            let (t, e) = match enc {
+                Some(x) => (doc::decode_as(&b, x), x),
+                None => doc::decode(&b),
+            };
             let (caret, first) = (send(a.sci, sci::GETCURRENTPOS, 0, 0), send(a.sci, sci::GETFIRSTVISIBLE, 0, 0));
             let mut z = t.clone();
             z.push(0);
@@ -583,6 +601,11 @@ fn reload(a: &mut App) {
             send(a.sci, sci::SETSAVEPOINT, 0, 0);
             send(a.sci, sci::SETSEL, caret as usize, caret);
             send(a.sci, sci::SETFIRSTVISIBLE, first as usize, 0);
+            if a.docs[a.cur].follow {
+                let n = send(a.sci, sci::GETLENGTH, 0, 0);
+                send(a.sci, sci::SETSEL, n as usize, n);
+                send(a.sci, 2169, 0, 0); // SCROLLCARET
+            }
             let d = &mut a.docs[a.cur];
             (d.enc, d.dirty, d.mtime) = (e, false, mtime(&p));
             refresh();
@@ -600,6 +623,9 @@ pub fn check_external() {
         return;
     }
     a.docs[a.cur].mtime = new;
+    if a.docs[a.cur].follow && a.docs[a.cur].dirty {
+        return;
+    }
     if !a.docs[a.cur].dirty {
         reload(a);
     } else if unsafe { MessageBoxW(a.hwnd, w("Le fichier a été modifié en dehors de WinNote. Recharger (vos changements seront perdus) ?").as_ptr(), w("WinNote").as_ptr(), MB_YESNO | MB_ICONQUESTION) } == IDYES {
@@ -607,7 +633,7 @@ pub fn check_external() {
     }
 }
 
-fn copy_text(s: &str) {
+pub fn copy_text(s: &str) {
     unsafe {
         if OpenClipboard(app().hwnd) == 0 {
             return;
@@ -669,6 +695,12 @@ pub fn on_command(id: usize) {
         },
         PRINT => crate::print::print_doc(),
         RELOAD => reload(a),
+        FOLLOW => {
+            a.docs[a.cur].follow = !a.docs[a.cur].follow;
+            if a.docs[a.cur].follow {
+                reload(a);
+            }
+        }
         REVEALFILE => {
             if let Some(p) = &a.docs[a.cur].path {
                 let _ = std::process::Command::new("explorer.exe").arg(format!("/select,{p}")).spawn();
@@ -852,10 +884,11 @@ pub fn on_command(id: usize) {
             send(s, sci::CONVERTEOLS, m, 0);
             refresh();
         }
-        200..=204 => {
+        200..=218 => {
             a.docs[a.cur].enc = Enc::ALL[id - ENC];
             refresh();
         }
+        230..=248 => reload_with(a, Some(Enc::ALL[id - RENC])),
         300..=399 if id - LANG < LANGS.len() => set_language(id - LANG),
         400..=499 if id - THEME < THEMES.len() => {
             a.theme = id - THEME;

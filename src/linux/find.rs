@@ -14,6 +14,8 @@ pub struct Bar {
     pub case: gtk::ToggleButton,
     pub word: gtk::ToggleButton,
     pub regex: gtk::ToggleButton,
+    pub ext: gtk::ToggleButton,
+    pub sel: gtk::ToggleButton,
     pub count: gtk::Label,
     pub repl_row: gtk::Box,
 }
@@ -32,12 +34,13 @@ impl Bar {
             b
         };
         let (case, word, regex) = (mk("Aa", "Respecter la casse"), mk("ab", "Mot entier"), mk(".*", "Expression régulière"));
+        let (ext, sel) = (mk("↵", "Mode étendu : n, r, t, xNN précédés d'une barre oblique inverse"), mk("▭", "Dans la sélection"));
         let prev = gtk::Button::with_label("↑");
         let next = gtk::Button::with_label("↓");
         let close = gtk::Button::from_icon_name(Some("window-close-symbolic"), gtk::IconSize::Menu);
         close.set_relief(gtk::ReliefStyle::None);
         let count = gtk::Label::new(None);
-        for w in [find.upcast_ref::<gtk::Widget>(), case.upcast_ref(), word.upcast_ref(), regex.upcast_ref(), prev.upcast_ref(), next.upcast_ref(), count.upcast_ref()] {
+        for w in [find.upcast_ref::<gtk::Widget>(), case.upcast_ref(), word.upcast_ref(), regex.upcast_ref(), ext.upcast_ref(), sel.upcast_ref(), prev.upcast_ref(), next.upcast_ref(), count.upcast_ref()] {
             row1.pack_start(w, false, false, 0);
         }
         row1.pack_end(&close, false, false, 0);
@@ -47,16 +50,19 @@ impl Bar {
         repl.set_width_chars(34);
         let one = gtk::Button::with_label("Remplacer");
         let all = gtk::Button::with_label("Tout");
+        let tabs = gtk::Button::with_label("Tous les onglets");
         repl_row.pack_start(&repl, false, false, 0);
         repl_row.pack_start(&one, false, false, 0);
         repl_row.pack_start(&all, false, false, 0);
+        repl_row.pack_start(&tabs, false, false, 0);
         root.pack_start(&row1, false, false, 0);
         root.pack_start(&repl_row, false, false, 0);
 
         find.connect_changed(|_| {
             find_from(true, true);
         });
-        find.connect_activate(|_| {
+        find.connect_activate(|e| {
+            crate::findx::hist_push(e.text().as_str());
             find_from(false, true);
         });
         repl.connect_activate(|_| replace_one());
@@ -68,20 +74,42 @@ impl Bar {
         });
         one.connect_clicked(|_| replace_one());
         all.connect_clicked(|_| replace_all());
+        tabs.connect_clicked(|_| replace_all_tabs());
         close.connect_clicked(|_| close_bar());
         for t in [&case, &word, &regex] {
             t.connect_toggled(|_| {
                 find_from(true, true);
             });
         }
+        ext.connect_toggled(|b| {
+            crate::findx::set_ext(b.is_active());
+            find_from(true, true);
+        });
+        sel.connect_toggled(|b| {
+            let s = app().sci;
+            let (ss, se) = (send(s, sci::GETSELSTART, 0, 0), send(s, sci::GETSELEND, 0, 0));
+            crate::findx::set_sel(if b.is_active() && se > ss { Some((ss, se)) } else { None });
+            if b.is_active() && se <= ss {
+                b.set_active(false);
+            }
+            find_from(true, true);
+        });
         find.connect_key_press_event(|_, e| {
-            if e.keyval() == gtk::gdk::keys::constants::Escape {
+            let k = e.keyval();
+            if k == gtk::gdk::keys::constants::Escape {
                 close_bar();
+                return gtk::glib::Propagation::Stop;
+            }
+            if k == gtk::gdk::keys::constants::Up || k == gtk::gdk::keys::constants::Down {
+                if let Some(h) = crate::findx::hist_step(k == gtk::gdk::keys::constants::Up) {
+                    app().find.find.set_text(&h);
+                    app().find.find.set_position(-1);
+                }
                 return gtk::glib::Propagation::Stop;
             }
             gtk::glib::Propagation::Proceed
         });
-        Bar { root, find, repl, case, word, regex, count, repl_row }
+        Bar { root, find, repl, case, word, regex, ext, sel, count, repl_row }
     }
 
     pub fn hide(&self) {
@@ -95,7 +123,11 @@ fn flags() -> usize {
 }
 
 fn query() -> Vec<u8> {
-    app().find.find.text().as_bytes().to_vec()
+    crate::findx::prep(app().find.find.text().as_bytes().to_vec(), app().find.regex.is_active())
+}
+
+fn replacement() -> Vec<u8> {
+    crate::findx::prep(app().find.repl.text().as_bytes().to_vec(), app().find.regex.is_active())
 }
 
 fn search(st: isize, en: isize, what: &[u8]) -> isize {
@@ -115,12 +147,12 @@ pub fn find_from(from_sel_start: bool, down: bool) -> bool {
         mark_all();
         return false;
     }
-    let len = send(s, sci::GETLENGTH, 0, 0);
+    let (lo, hi) = crate::findx::range(send(s, sci::GETLENGTH, 0, 0));
     send(s, sci::SETSEARCHFLAGS, flags(), 0);
-    let (ss, se) = (send(s, sci::GETSELSTART, 0, 0), send(s, sci::GETSELEND, 0, 0));
-    let mut r = if down { search(if from_sel_start { ss } else { se }, len, &what) } else { search(ss, 0, &what) };
+    let (ss, se) = (send(s, sci::GETSELSTART, 0, 0).clamp(lo, hi), send(s, sci::GETSELEND, 0, 0).clamp(lo, hi));
+    let mut r = if down { search(if from_sel_start { ss } else { se }, hi, &what) } else { search(ss, lo, &what) };
     if r < 0 {
-        r = if down { search(0, len, &what) } else { search(len, 0, &what) };
+        r = if down { search(lo, hi, &what) } else { search(hi, lo, &what) };
     }
     if r >= 0 {
         let (ts, te) = (send(s, sci::GETTARGETSTART, 0, 0), send(s, sci::GETTARGETEND, 0, 0));
@@ -144,11 +176,12 @@ pub fn mark_all() {
     let len = send(s, sci::GETLENGTH, 0, 0);
     send(s, sci::SETINDICCURRENT, INDIC, 0);
     send(s, sci::INDICCLEAR, 0, len);
+    let (lo, len) = crate::findx::range(len);
     let mut n = 0;
     let what = query();
     if !what.is_empty() && a.find.root.is_visible() {
         send(s, sci::SETSEARCHFLAGS, flags(), 0);
-        let mut pos = 0;
+        let mut pos = lo;
         while n < 5000 {
             if search(pos, len, &what) < 0 {
                 break;
@@ -188,7 +221,7 @@ pub fn replace_one() {
     let a = app();
     let s = a.sci;
     let what = query();
-    let rep = a.find.repl.text().as_bytes().to_vec();
+    let rep = replacement();
     send(s, sci::SETSEARCHFLAGS, flags(), 0);
     let (ss, se) = (send(s, sci::GETSELSTART, 0, 0), send(s, sci::GETSELEND, 0, 0));
     if !what.is_empty() && search(ss, se, &what) == ss && send(s, sci::GETTARGETEND, 0, 0) == se {
@@ -199,30 +232,59 @@ pub fn replace_one() {
     find_from(false, true);
 }
 
+fn replace_in_doc(what: &[u8], rep: &[u8]) -> u32 {
+    let s = app().sci;
+    send(s, sci::SETSEARCHFLAGS, flags(), 0);
+    send(s, sci::BEGINUNDO, 0, 0);
+    let (lo, _) = crate::findx::range(send(s, sci::GETLENGTH, 0, 0));
+    let (mut pos, mut n) = (lo, 0);
+    loop {
+        let (_, hi) = crate::findx::range(send(s, sci::GETLENGTH, 0, 0));
+        if pos > hi || search(pos, hi, what) < 0 {
+            break;
+        }
+        let ts = send(s, sci::GETTARGETSTART, 0, 0);
+        let before = send(s, sci::GETLENGTH, 0, 0);
+        replace_target(rep);
+        let e = send(s, sci::GETTARGETEND, 0, 0);
+        crate::findx::shift_end(send(s, sci::GETLENGTH, 0, 0) - before);
+        pos = if e == ts { e + 1 } else { e };
+        n += 1;
+    }
+    send(s, sci::ENDUNDO, 0, 0);
+    n
+}
+
 pub fn replace_all() {
-    let a = app();
-    let s = a.sci;
     let what = query();
     if what.is_empty() {
         return;
     }
-    let rep = a.find.repl.text().as_bytes().to_vec();
-    send(s, sci::SETSEARCHFLAGS, flags(), 0);
-    send(s, sci::BEGINUNDO, 0, 0);
-    let (mut pos, mut n) = (0isize, 0);
-    loop {
-        let len = send(s, sci::GETLENGTH, 0, 0);
-        if pos > len || search(pos, len, &what) < 0 {
-            break;
-        }
-        replace_target(&rep);
-        let e = send(s, sci::GETTARGETEND, 0, 0);
-        pos = if e == send(s, sci::GETTARGETSTART, 0, 0) { e + 1 } else { e };
-        n += 1;
-    }
-    send(s, sci::ENDUNDO, 0, 0);
+    let n = replace_in_doc(&what, &replacement());
     mark_all();
     msg_box(&format!("{n} remplacement(s) effectué(s)."));
+}
+
+pub fn replace_all_tabs() {
+    let what = query();
+    if what.is_empty() {
+        return;
+    }
+    let (rep, keep) = (replacement(), app().cur);
+    crate::findx::set_sel(None);
+    app().find.sel.set_active(false);
+    let (mut n, mut docs) = (0, 0);
+    for i in 0..app().docs.len() {
+        crate::edit::switch_to(i);
+        let k = replace_in_doc(&what, &rep);
+        if k > 0 {
+            docs += 1;
+            n += k;
+        }
+    }
+    crate::edit::switch_to(keep);
+    mark_all();
+    msg_box(&format!("{n} remplacement(s) dans {docs} onglet(s)."));
 }
 
 pub fn open(replace: bool) {

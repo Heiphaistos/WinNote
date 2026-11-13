@@ -227,7 +227,8 @@ pub fn new_tab(path: Option<String>, text: Option<(Vec<u8>, Enc)>, dirty: bool, 
             close_tab(i);
         }
     });
-    a.docs.push(Tab { sci: ptr, path, enc, lang, dirty, untitled, page: widget.clone(), label });
+    let mtime = path.as_deref().and_then(file_mtime);
+    a.docs.push(Tab { sci: ptr, path, enc, lang, dirty, follow: false, mtime, untitled, page: widget.clone(), label });
     let idx = a.nb.append_page(&widget, Some(&tb));
     a.nb.set_tab_reorderable(&widget, true);
     widget.show();
@@ -410,13 +411,18 @@ pub fn save_doc(i: usize, as_new: bool) -> bool {
             }
         }
     };
-    let bytes = doc::encode(&mtext(a.docs[i].sci), a.docs[i].enc);
+    let text = mtext(a.docs[i].sci);
+    if !doc::lossless(&text, a.docs[i].enc) && !confirm_lossy(a.docs[i].enc.name()) {
+        return false;
+    }
+    let bytes = doc::encode(&text, a.docs[i].enc);
     if let Err(e) = std::fs::write(&path, bytes) {
         msg_box(&format!("Échec de l'enregistrement : {e}"));
         return false;
     }
     let s = a.docs[i].sci;
     send(s, sci::SETSAVEPOINT, 0, 0);
+    a.docs[i].mtime = file_mtime(&path);
     let changed = a.docs[i].path.as_deref() != Some(&path);
     if changed {
         a.docs[i].path = Some(path.clone());
@@ -446,23 +452,80 @@ pub fn pick_folder() -> Option<String> {
     (d.run() == gtk::ResponseType::Accept).then(|| d.filename().map(|f| f.to_string_lossy().to_string())).flatten()
 }
 
+fn file_mtime(p: &str) -> Option<std::time::SystemTime> {
+    std::fs::metadata(p).and_then(|m| m.modified()).ok()
+}
+
 pub fn reload() {
+    reload_at(app().cur, None);
+}
+
+pub fn reload_with(enc: Option<Enc>) {
+    reload_at(app().cur, enc);
+}
+
+fn reload_at(i: usize, enc: Option<Enc>) {
     let a = app();
-    let Some(p) = a.docs[a.cur].path.clone() else { return };
+    let Some(p) = a.docs.get(i).and_then(|d| d.path.clone()) else { return };
     match std::fs::read(&p) {
         Ok(b) => {
-            let (t, e) = doc::decode(&b);
-            let s = a.sci;
+            let (t, e) = match enc {
+                Some(x) => (doc::decode_as(&b, x), x),
+                None => doc::decode(&b),
+            };
+            let s = a.docs[i].sci;
+            let (caret, first) = (send(s, sci::GETCURRENTPOS, 0, 0), send(s, sci::GETFIRSTVISIBLE, 0, 0));
             let mut z = t;
             z.push(0);
             send(s, sci::SETTEXT, 0, z.as_ptr() as isize);
             send(s, sci::EMPTYUNDO, 0, 0);
             send(s, sci::SETSAVEPOINT, 0, 0);
-            a.docs[a.cur].enc = e;
-            a.docs[a.cur].dirty = false;
+            if a.docs[i].follow {
+                let n = send(s, sci::GETLENGTH, 0, 0);
+                send(s, sci::SETSEL, n as usize, n);
+                send(s, 2169, 0, 0); // SCROLLCARET
+            } else {
+                send(s, sci::SETSEL, caret as usize, caret);
+                send(s, sci::SETFIRSTVISIBLE, first as usize, 0);
+            }
+            a.docs[i].enc = e;
+            a.docs[i].dirty = false;
+            a.docs[i].mtime = file_mtime(&p);
             refresh();
         }
         Err(e) => msg_box(&format!("Rechargement impossible : {e}")),
+    }
+}
+
+/// Appelé par un minuteur : un fichier ouvert a changé sur le disque -> rechargement (confirmation si l'onglet est modifié).
+pub fn check_external() {
+    let a = app();
+    for i in 0..a.docs.len() {
+        let Some(p) = a.docs[i].path.clone() else { continue };
+        let (old, new) = (a.docs[i].mtime, file_mtime(&p));
+        if old.is_none() || new.is_none() || old == new {
+            continue;
+        }
+        a.docs[i].mtime = new;
+        if !a.docs[i].dirty {
+            reload_at(i, None);
+        } else if !a.docs[i].follow {
+            let d = gtk::MessageDialog::new(Some(&a.win), gtk::DialogFlags::MODAL, gtk::MessageType::Question, gtk::ButtonsType::YesNo, &format!("« {} » a été modifié en dehors de WinNote. Recharger (vos changements seront perdus) ?", a.docs[i].label.text()));
+            let r = d.run();
+            d.close();
+            if r == gtk::ResponseType::Yes {
+                reload_at(i, None);
+            }
+        }
+    }
+}
+
+pub fn toggle_follow() {
+    let a = app();
+    let f = !a.docs[a.cur].follow;
+    a.docs[a.cur].follow = f;
+    if f {
+        reload();
     }
 }
 
@@ -586,4 +649,12 @@ pub fn restore_session() -> bool {
         switch_to(cur.min(a.docs.len() - 1));
     }
     n > 0
+}
+
+fn confirm_lossy(name: &str) -> bool {
+    let a = app();
+    let d = gtk::MessageDialog::new(Some(&a.win), gtk::DialogFlags::MODAL, gtk::MessageType::Warning, gtk::ButtonsType::YesNo, &format!("Certains caractères n'existent pas en {name} et seront remplacés par « ? ». Enregistrer quand même ?"));
+    let r = d.run();
+    d.close();
+    r == gtk::ResponseType::Yes
 }

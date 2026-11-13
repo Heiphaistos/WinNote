@@ -8,6 +8,10 @@ pub mod doc;
 pub mod ids;
 #[path = "../lang.rs"]
 pub mod lang;
+#[path = "../fileops.rs"]
+pub mod fileops;
+#[path = "../findx.rs"]
+pub mod findx;
 #[path = "../assist.rs"]
 pub mod assist;
 #[path = "../mdedit.rs"]
@@ -57,6 +61,8 @@ pub struct Tab {
     pub enc: Enc,
     pub lang: usize,
     pub dirty: bool,
+    pub follow: bool,
+    pub mtime: Option<std::time::SystemTime>,
     pub untitled: u32,
     pub page: gtk::Widget,
     pub label: gtk::Label,
@@ -183,6 +189,10 @@ fn main() {
             gtk::glib::ControlFlow::Continue
         });
     }
+    gtk::glib::timeout_add_local(std::time::Duration::from_millis(1500), || {
+        edit::check_external();
+        gtk::glib::ControlFlow::Continue
+    });
     update::start();
     gtk::main();
 }

@@ -3,6 +3,8 @@
 mod cmds;
 mod doc;
 mod findbar;
+mod findx;
+mod fileops;
 mod ids;
 mod lang;
 mod mdpreview;
@@ -242,6 +244,7 @@ unsafe fn on_timer(a: &mut App, id: usize) {
             sidebar::refresh();
         }
         6 => mdlive::on_timer(),
+        7 => cmds::check_external(),
         3 => session::save(a),
         9 => {
             KillTimer(a.hwnd, 9);
@@ -550,6 +553,7 @@ fn main() {
             cmds::open_path(p);
         }
         SetTimer(hwnd, 3, 30_000, None);
+        SetTimer(hwnd, 7, 1_500, None);
         SetTimer(hwnd, 4, 6 * 3600 * 1000, None);
         SetTimer(hwnd, 5, 8_000, None);
         let mut msg: MSG = std::mem::zeroed();
