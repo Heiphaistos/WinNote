@@ -81,6 +81,7 @@ pub fn sync_checks() {
                 SPELL => a.spell,
                 TOPMOST => a.topmost,
                 AUTOCOMP => prefs::autocomp(),
+                FOLLOW => a.docs.get(a.cur).is_some_and(|d| d.follow),
                 x if (INDENT_AUTO..INDENT_AUTO + 5).contains(&x) => x - INDENT_AUTO == match prefs::indent() { prefs::Indent::Auto => 0, prefs::Indent::Spaces(2) => 1, prefs::Indent::Spaces(4) => 2, prefs::Indent::Spaces(8) => 3, _ => 4 },
                 READONLY => !a.docs.is_empty() && send(a.sci, sci::GETREADONLY, 0, 0) != 0,
                 AUTOUPDATE => a.auto_update,
@@ -357,7 +358,10 @@ pub fn on_command(id: usize) {
         REOPEN => edit::reopen_closed(),
         EXIT => quit(),
         RELOAD => edit::reload(),
-        FOLLOW => edit::toggle_follow(),
+        FOLLOW => {
+            edit::toggle_follow();
+            sync_checks();
+        }
         AUTOCOMP => {
             prefs::set_autocomp(!prefs::autocomp());
             sync_checks();
@@ -604,7 +608,7 @@ fn build_menu(ag: &gtk::AccelGroup) -> gtk::MenuBar {
     add(&f, ag, "Enregistrer sous...", Some("<Primary><Shift>s"), SAVEAS);
     add(&f, ag, "Tout enregistrer", Some("<Primary><Alt>s"), SAVEALL);
     add(&f, ag, "Recharger depuis le disque", None, RELOAD);
-    add(&f, ag, "Suivre la fin du fichier (tail -f)", None, FOLLOW);
+    check(&f, ag, "Suivre la fin du fichier (tail -f)", None, FOLLOW);
     add(&f, ag, "Imprimer...", Some("<Primary>p"), PRINT);
     add(&f, ag, "Ouvrir dans une nouvelle fenêtre", None, NEWWINDOW);
     f.append(&gtk::SeparatorMenuItem::new());
@@ -853,10 +857,15 @@ pub fn build_app(test: bool) -> App {
 
 /// Raccourcis personnalisés (raccourcis.txt) : un élément de menu caché par combinaison.
 fn user_accels(ag: &gtk::AccelGroup) {
+    keymap::init(gtk::glib::user_config_dir().join("winnote")); // la fenêtre est construite avant les réglages
+    // GTK n'active le raccourci d'un élément de menu que s'il a un menu parent : on les range dans un menu caché
+    let hidden = gtk::Menu::new();
     for (chord, id) in keymap::user() {
         let it = gtk::MenuItem::new();
+        it.show();
         accel(&it, ag, &keymap::gtk_spec(&chord));
         it.connect_activate(move |_| on_command(id));
-        std::mem::forget(it);
+        hidden.append(&it);
     }
+    std::mem::forget(hidden);
 }

@@ -425,6 +425,23 @@ autre").unwrap();
     cmds::on_command(INDENT_AUTO);
     lang("Texte brut");
 
+    // ----- saisie par la palette (renommer / nouveau fichier de l'explorateur) + opérations sur fichiers -----
+    thread_local! { static GOT: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) }; }
+    crate::palette::input("Nom ?", "ab", Box::new(|s| GOT.with(|g| *g.borrow_mut() = s)));
+    unsafe {
+        SendMessageW(a.palette, WM_CHAR, 'c' as usize, 0);
+        SendMessageW(a.palette, WM_KEYDOWN, 0x0D, 0);
+    }
+    t.check("palette en saisie de texte : valeur validée", &GOT.with(|g| g.borrow().clone()), "abc");
+    let fo = dir.join("fo");
+    std::fs::create_dir_all(&fo).ok();
+    let made = crate::fileops::new_file(&fo.to_string_lossy(), "n.md");
+    t.check_bool("nouveau fichier créé", made.as_ref().is_ok_and(|p| std::path::Path::new(p).exists()));
+    t.check_bool("nouveau fichier : nom déjà pris refusé", crate::fileops::new_file(&fo.to_string_lossy(), "n.md").is_err());
+    let renamed = crate::fileops::rename(&made.unwrap_or_default(), "m.md");
+    t.check_bool("renommer", renamed.as_ref().is_ok_and(|p| p.ends_with("m.md") && std::path::Path::new(p).exists()));
+    t.check_bool("dupliquer", crate::fileops::duplicate(&renamed.unwrap_or_default()).is_ok_and(|p| p.ends_with("m copie.md")));
+
     // ----- tous les langages : lexer chargé + au moins un octet coloré sur un échantillon -----
     for (i, l) in LANGS.iter().enumerate() {
         if l.lexer.is_empty() || l.lexer == "markdown" {

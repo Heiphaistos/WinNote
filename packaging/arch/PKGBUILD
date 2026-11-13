@@ -1,6 +1,6 @@
 # Maintainer: Heiphaistos
 pkgname=winnote
-pkgver=0.6.2
+pkgver=0.7.0
 pkgrel=1
 pkgdesc='Editeur de texte leger : onglets, themes, coloration, recherche regex, palette de commandes (GTK3, moteur Scintilla)'
 arch=('x86_64')

@@ -67,3 +67,7 @@ Multi-curseurs (Alt+D), selection rectangulaire native, signets, repli, tri A-Z/
 
 ## Recommandation d'ordre
 1) Accolades assorties + auto-completion/paires (A) ; 2) rechargement auto si fichier modifie dehors + tail (A) ; 3) commandes de mise en forme Markdown + listes (B/C, une seule implementation couvre Bloc-notes et Obsidian) ; 4) Rechercher/Remplacer : selection, etendu, compter, marquer ; 5) explorateur : creer/renommer/supprimer/dupliquer ; 6) mappeur de raccourcis + taille de tabulation ; 7) encodages supplementaires.
+
+## Etat 0.7.0 (2026-11-13) : P1 faits sur Windows et Linux/macOS
+Fait : parentheses assorties + fermeture auto + autocompletion des mots ; Rechercher/Remplacer (dans la selection, mode etendu, compteur et marquage, tous les onglets, historique) ; rechargement auto + tail -f ; explorateur (creer, renommer, dupliquer, deplacer, supprimer, corbeille) ; 19 encodages + « Recharger avec l'encodage » + alerte de perte ; indentation par langage ; raccourcis personnalises (raccourcis.txt).
+Reste : tous les P2 ci-dessus (macros, colonnes, tris, guides d'indentation, historique des modifications, liste des fonctions, onglets epingles...) et les P3.
