@@ -230,7 +230,7 @@ pub fn new_tab(path: Option<String>, text: Option<(Vec<u8>, Enc)>, dirty: bool, 
         }
     });
     let mtime = path.as_deref().and_then(file_mtime);
-    a.docs.push(Tab { sci: ptr, path, enc, lang, dirty, follow: false, mtime, untitled, page: widget.clone(), label });
+    a.docs.push(Tab { sci: ptr, path, enc, lang, dirty, follow: false, pinned: false, mtime, untitled, page: widget.clone(), label });
     let idx = a.nb.append_page(&widget, Some(&tb));
     a.nb.set_tab_reorderable(&widget, true);
     widget.show();
@@ -281,7 +281,7 @@ pub fn refresh() {
         return;
     }
     for t in &a.docs {
-        t.label.set_text(&format!("{}{}", if t.dirty { "● " } else { "" }, title_of(t)));
+        t.label.set_text(&format!("{}{}{}", if t.pinned { "◆ " } else { "" }, if t.dirty { "● " } else { "" }, title_of(t)));
     }
     let d = &a.docs[a.cur.min(a.docs.len() - 1)];
     let title = format!("{}{} - WinNote", if d.dirty { "*" } else { "" }, title_of(d));
@@ -322,7 +322,7 @@ fn confirm_close(i: usize) -> bool {
 }
 
 pub fn close_tab(i: usize) {
-    if i < app().docs.len() && confirm_close(i) {
+    if i < app().docs.len() && !app().docs[i].pinned && confirm_close(i) {
         drop_tab(i);
     }
 }
@@ -354,6 +354,7 @@ pub fn close_side(keep: usize, dir: i32) {
     loop {
         let k = a.docs.iter().position(|t| t.sci == keep_ptr).unwrap_or(0);
         let Some(i) = a.docs.iter().enumerate().position(|(j, t)| match dir {
+            _ if t.pinned => false,
             x if x < 0 => j < k,
             0 => !t.dirty && t.sci != keep_ptr && t.path.is_some(),
             _ => j > k,
@@ -368,7 +369,7 @@ pub fn close_side(keep: usize, dir: i32) {
 pub fn close_others(keep: usize) {
     let a = app();
     let keep_ptr = a.docs[keep].sci;
-    while let Some(i) = a.docs.iter().position(|t| t.sci != keep_ptr) {
+    while let Some(i) = a.docs.iter().position(|t| t.sci != keep_ptr && !t.pinned) {
         if !confirm_close(i) {
             break;
         }

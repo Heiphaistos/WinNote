@@ -56,6 +56,7 @@ pub struct Doc {
     pub untitled: u32,
     pub dirty: bool,
     pub follow: bool,
+    pub pinned: bool,
     pub mtime: Option<std::time::SystemTime>,
 }
 

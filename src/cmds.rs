@@ -356,7 +356,7 @@ pub fn push_doc_full(a: &mut App, path: Option<String>, text: Option<(Vec<u8>, E
     };
     let enc = text.as_ref().map_or(Enc::Utf8, |t| t.1);
     let mt = path.as_deref().and_then(mtime);
-    a.docs.push(Doc { ptr, path, enc, lang, caret: 0, first: 0, untitled, dirty, follow: false, mtime: mt });
+    a.docs.push(Doc { ptr, path, enc, lang, caret: 0, first: 0, untitled, dirty, follow: false, pinned: false, mtime: mt });
     a.cur = a.docs.len() - 1;
     send(a.sci, sci::SETDOCPTR, 0, ptr);
     send(a.sci, sci::SETCODEPAGE, 65001, 0);
@@ -466,7 +466,7 @@ fn confirm_close(a: &mut App, i: usize) -> bool {
 
 pub fn cmd_close(i: usize) {
     let a = app();
-    if i < a.docs.len() && confirm_close(a, i) {
+    if i < a.docs.len() && !a.docs[i].pinned && confirm_close(a, i) {
         drop_doc(a, i);
     }
 }
@@ -478,6 +478,7 @@ fn close_side(dir: i32) {
     loop {
         let k = a.docs.iter().position(|d| d.ptr == keep_ptr).unwrap_or(0);
         let Some(i) = a.docs.iter().enumerate().position(|(j, d)| match dir {
+            _ if d.pinned => false,
             x if x < 0 => j < k,
             0 => !d.dirty && d.ptr != keep_ptr && d.path.is_some(),
             _ => j > k,
@@ -493,7 +494,7 @@ fn close_many(keep: Option<usize>) {
     let a = app();
     let keep_ptr = keep.map(|k| a.docs[k].ptr);
     loop {
-        let Some(i) = a.docs.iter().position(|d| Some(d.ptr) != keep_ptr) else { break };
+        let Some(i) = a.docs.iter().position(|d| Some(d.ptr) != keep_ptr && !d.pinned) else { break };
         if keep.is_none() && a.docs.len() == 1 && a.docs[0].path.is_none() && !a.docs[0].dirty {
             break;
         }
@@ -769,6 +770,12 @@ pub fn on_command(id: usize) {
             }
         }
         BLOCKCOMM => textops::block_comment(),
+        PINTAB => {
+            let p = !a.docs[a.cur].pinned;
+            a.docs[a.cur].pinned = p;
+            let n = a.docs.iter().enumerate().filter(|(i, d)| d.pinned && *i != a.cur).count();
+            move_tab(a.cur, n);
+        }
         BROWSER => {
             if let Some(p) = a.docs[a.cur].path.clone() {
                 shell_open(&p);

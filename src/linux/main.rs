@@ -68,6 +68,7 @@ pub struct Tab {
     pub lang: usize,
     pub dirty: bool,
     pub follow: bool,
+    pub pinned: bool,
     pub mtime: Option<std::time::SystemTime>,
     pub untitled: u32,
     pub page: gtk::Widget,

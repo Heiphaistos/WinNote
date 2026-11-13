@@ -58,6 +58,7 @@ pub fn build() -> Menus {
         add(f, BROWSER, "Ouvrir dans le navigateur");
         sep(f);
         add(f, CLOSE, "Fermer l'onglet\tCtrl+W");
+        add(f, PINTAB, "Épingler / désépingler l'onglet");
         add(f, CLOSEOTHERS, "Fermer les autres onglets");
         add(f, CLOSELEFT, "Fermer les onglets à gauche");
         add(f, CLOSERIGHT, "Fermer les onglets à droite");
@@ -318,7 +319,7 @@ pub fn editor_context(x: i32, y: i32) {
 pub fn tab_context(x: i32, y: i32) {
     unsafe {
         let m = CreatePopupMenu();
-        for (id, t) in [(CLOSE, "Fermer"), (NEWWINDOW, "Ouvrir dans une nouvelle fenêtre"), (CLOSEOTHERS, "Fermer les autres"), (CLOSELEFT, "Fermer à gauche"), (CLOSERIGHT, "Fermer à droite"), (CLOSEALL, "Fermer tous"), (0, ""), (SAVE, "Enregistrer"), (SAVEAS, "Enregistrer sous..."),
+        for (id, t) in [(CLOSE, "Fermer"), (PINTAB, "Épingler / désépingler"), (NEWWINDOW, "Ouvrir dans une nouvelle fenêtre"), (CLOSEOTHERS, "Fermer les autres"), (CLOSELEFT, "Fermer à gauche"), (CLOSERIGHT, "Fermer à droite"), (CLOSEALL, "Fermer tous"), (0, ""), (SAVE, "Enregistrer"), (SAVEAS, "Enregistrer sous..."),
             (0, ""), (COPYPATH, "Copier le chemin"), (REVEALFILE, "Afficher dans l'explorateur"), (REOPEN, "Rouvrir l'onglet fermé")] {
             if id == 0 { sep(m) } else { add(m, id, t) }
         }

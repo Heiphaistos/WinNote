@@ -131,7 +131,7 @@ fn paint_tabs(dc: HDC, rc: &RECT) {
             }
             SetTextColor(dc, if sel { t.ui_fg } else { dim });
             let mut tr = RECT { left: r.left + scale(14), right: close_rect(r).left, ..*r };
-            text(dc, &a.docs[i].title(), &mut tr, DT_END_ELLIPSIS);
+            text(dc, &format!("{}{}", if a.docs[i].pinned { "◆ " } else { "" }, a.docs[i].title()), &mut tr, DT_END_ELLIPSIS);
             let c = close_rect(r);
             let (cx, cy) = ((c.left + c.right) / 2, (c.top + c.bottom) / 2);
             let on_close = hover == Hit::Close(i);

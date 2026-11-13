@@ -488,6 +488,15 @@ autre").unwrap();
     cmds::on_command(CLOSERIGHT);
     t.check("fermer les onglets à droite", &a.docs.len().to_string(), &(n0 + 1).to_string());
 
+    // ----- onglet épinglé -----
+    let n1 = a.docs.len();
+    cmds::on_command(PINTAB);
+    t.check("épinglé : passe en tête", &format!("{}{}", a.docs[0].pinned, a.cur), "true0");
+    cmds::cmd_close(0);
+    t.check("épinglé : ne se ferme pas", &a.docs.len().to_string(), &n1.to_string());
+    cmds::on_command(PINTAB);
+    t.check("désépinglé", &a.docs[a.cur].pinned.to_string(), "false");
+
     // ----- tous les langages : lexer chargé + au moins un octet coloré sur un échantillon -----
     for (i, l) in LANGS.iter().enumerate() {
         if l.lexer.is_empty() || l.lexer == "markdown" {

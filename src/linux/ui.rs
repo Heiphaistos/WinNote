@@ -404,6 +404,16 @@ pub fn on_command(id: usize) {
             }
         }
         BLOCKCOMM => crate::textops::block_comment(),
+        PINTAB => {
+            let p = !a.docs[doc_i].pinned;
+            a.docs[doc_i].pinned = p;
+            let n = a.docs.iter().enumerate().filter(|(i, d)| d.pinned && *i != doc_i).count();
+            let t = a.docs.remove(doc_i);
+            a.nb.reorder_child(&t.page, Some(n as u32));
+            a.docs.insert(n, t);
+            a.cur = n;
+            edit::refresh();
+        }
         COPYPATH => {
             if let (Some(p), Some(d)) = (a.docs[doc_i].path.clone(), gtk::gdk::Display::default()) {
                 gtk::Clipboard::default(&d).map(|c| c.set_text(&p));
@@ -686,6 +696,7 @@ fn build_menu(ag: &gtk::AccelGroup) -> gtk::MenuBar {
     add(&f, ag, "Copier le dossier", None, COPYDIR);
     f.append(&gtk::SeparatorMenuItem::new());
     add(&f, ag, "Fermer l'onglet", Some("<Primary>w"), CLOSE);
+    add(&f, ag, "Épingler / désépingler l'onglet", None, PINTAB);
     add(&f, ag, "Fermer les autres onglets", None, CLOSEOTHERS);
     add(&f, ag, "Fermer les onglets à gauche", None, CLOSELEFT);
     add(&f, ag, "Fermer les onglets à droite", None, CLOSERIGHT);

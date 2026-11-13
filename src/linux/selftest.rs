@@ -240,6 +240,13 @@ pub fn run(log_path: &str) -> i32 {
     crate::assist::smart_highlight(a.sci);
     t.check("occurrences surlignées (hors sélection)", &format!("{}{}{}", send(a.sci, 2507, 10, 0), send(a.sci, 2507, 10, 8), send(a.sci, 2507, 10, 16)), "011");
     t.check("historique des modifications actif", &send(a.sci, 2781, 0, 0).to_string(), "3");
+    let n1 = a.docs.len();
+    on_command(PINTAB);
+    t.check("épinglé : passe en tête", &format!("{}{}", app().docs[0].pinned, app().cur), "true0");
+    edit::close_tab(0);
+    t.check("épinglé : ne se ferme pas", &app().docs.len().to_string(), &n1.to_string());
+    on_command(PINTAB);
+    t.check("désépinglé", &app().docs[app().cur].pinned.to_string(), "false");
     // liens [[note]]
     set("voir [[note-x]] ici");
     send(a.sci, sci::SETSEL, 8, 8);
