@@ -40,6 +40,7 @@ pub mod theme;
 pub mod vers;
 mod chrome;
 mod edit;
+mod features;
 mod find;
 mod print;
 mod selftest;
@@ -177,6 +178,7 @@ fn main() {
     }
     if !a.nosession {
         edit::restore_session();
+        features::recovery_start();
     }
     for p in &files {
         edit::open_path(p);
@@ -195,6 +197,10 @@ fn main() {
     if !a.nosession {
         gtk::glib::timeout_add_seconds_local(30, || {
             edit::save_session();
+            gtk::glib::ControlFlow::Continue
+        });
+        gtk::glib::timeout_add_seconds_local(10, || {
+            features::recovery_snapshot();
             gtk::glib::ControlFlow::Continue
         });
     }

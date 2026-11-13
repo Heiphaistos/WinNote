@@ -155,6 +155,8 @@ enum Act {
     Open(String),
     Tab(usize),
     OpenAt(String, usize),
+    Goto(usize),
+    Prop(String),
 }
 
 /// Commandes disponibles dans la version Linux (le reste de la table est propre à Windows).
@@ -245,6 +247,12 @@ fn palette(items: Vec<(String, String, Act)>, title: &str) {
         Some(Act::OpenAt(p, l)) => {
             edit::open_path(&p);
             send(app().sci, sci::GOTOLINE, l, 0);
+        }
+        Some(Act::Goto(l)) => drop(send(app().sci, sci::GOTOLINE, l, 0)),
+        Some(Act::Prop(init)) => {
+            if let Some(t) = side::ask_name_pub("Propriété — clé: valeur (valeur vide = retirer)", &init) {
+                crate::features::set_property(&t);
+            }
         }
         None => {}
     }
@@ -417,6 +425,12 @@ pub fn on_command(id: usize) {
                 .collect();
             palette(v, "Étiquettes #tag");
         }
+        PROPS => palette(crate::features::prop_items().into_iter().map(|(l, h, i)| (l, h, Act::Prop(i))).collect(), "Propriétés YAML"),
+        FAVTOGGLE => crate::features::fav_toggle(),
+        FAVS => palette(crate::features::favs().into_iter().map(|p| (p.rsplit('/').next().unwrap_or(&p).to_string(), p.clone(), Act::Open(p))).collect(), "Favoris"),
+        SYMBOLS => palette(crate::features::symbols().into_iter().map(|(l, h, n)| (l, h, Act::Goto(n))).collect(), "Fonctions et titres"),
+        SAVECOPY => crate::features::save_copy(),
+        PAGESETUP => crate::features::page_setup(),
         PINTAB => {
             let p = !a.docs[doc_i].pinned;
             a.docs[doc_i].pinned = p;
@@ -617,6 +631,7 @@ pub fn on_command(id: usize) {
 }
 
 pub fn quit() {
+    crate::features::recovery_end();
     edit::save_session();
     edit::save_settings();
     gtk::main_quit();
@@ -700,6 +715,8 @@ fn build_menu(ag: &gtk::AccelGroup) -> gtk::MenuBar {
     add(&f, ag, "Recharger depuis le disque", None, RELOAD);
     add(&f, ag, "Note du jour", None, DAILY);
     check(&f, ag, "Suivre la fin du fichier (tail -f)", None, FOLLOW);
+    add(&f, ag, "Enregistrer une copie...", None, SAVECOPY);
+    add(&f, ag, "Mise en page de l'impression...", None, PAGESETUP);
     add(&f, ag, "Imprimer...", Some("<Primary>p"), PRINT);
     add(&f, ag, "Ouvrir dans une nouvelle fenêtre", None, NEWWINDOW);
     f.append(&gtk::SeparatorMenuItem::new());
@@ -710,6 +727,10 @@ fn build_menu(ag: &gtk::AccelGroup) -> gtk::MenuBar {
     f.append(&gtk::SeparatorMenuItem::new());
     add(&f, ag, "Fermer l'onglet", Some("<Primary>w"), CLOSE);
     add(&f, ag, "Étiquettes #tag du dossier...", None, TAGS);
+    add(&f, ag, "Aller à une fonction / un titre...", None, SYMBOLS);
+    add(&f, ag, "Propriétés YAML du document...", None, PROPS);
+    add(&f, ag, "Favoris : ajouter / retirer ce fichier", None, FAVTOGGLE);
+    add(&f, ag, "Favoris...", None, FAVS);
     add(&f, ag, "Épingler / désépingler l'onglet", None, PINTAB);
     add(&f, ag, "Fermer les autres onglets", None, CLOSEOTHERS);
     add(&f, ag, "Fermer les onglets à gauche", None, CLOSELEFT);

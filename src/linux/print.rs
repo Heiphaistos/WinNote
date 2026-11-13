@@ -10,6 +10,8 @@ struct Job {
     text: String,
     title: String,
     date: String,
+    header: String,
+    footer: String,
     /// début (y) de chaque page dans la mise en page complète, et hauteur du corps
     pages: Vec<f64>,
     body_h: f64,
@@ -48,11 +50,19 @@ fn run(action: gtk::PrintOperationAction, export: Option<&str>) -> Result<usize,
     let d = &a.docs[a.cur];
     let text = String::from_utf8_lossy(&edit::text_of(a.cur)).replace('\t', "    ").replace('\r', "");
     let now = gtk::glib::DateTime::now_local().ok().and_then(|t| t.format("%d/%m/%Y %H:%M").ok()).map(|s| s.to_string()).unwrap_or_default();
-    let job = Rc::new(RefCell::new(Job { text, title: edit::title_of(d), date: now, pages: vec![0.0], body_h: 0.0, line_h: 0.0 }));
+    let layout = crate::extras::PrintLayout::load(&crate::prefs::dir());
+    let job = Rc::new(RefCell::new(Job { text, title: edit::title_of(d), date: now, header: layout.header.clone(), footer: layout.footer.clone(), pages: vec![0.0], body_h: 0.0, line_h: 0.0 }));
     let op = gtk::PrintOperation::new();
     op.set_job_name(&format!("WinNote - {}", job.borrow().title));
     op.set_unit(gtk::Unit::Points);
     op.set_use_full_page(false);
+    let ps = gtk::PageSetup::new();
+    let m = layout.margin_mm as f64;
+    ps.set_left_margin(m, gtk::Unit::Mm);
+    ps.set_right_margin(m, gtk::Unit::Mm);
+    ps.set_top_margin(m, gtk::Unit::Mm);
+    ps.set_bottom_margin(m, gtk::Unit::Mm);
+    op.set_default_page_setup(Some(&ps));
     if let Some(f) = export {
         op.set_export_filename(f);
     }
@@ -76,10 +86,19 @@ fn run(action: gtk::PrintOperationAction, export: Option<&str>) -> Result<usize,
             cr.set_source_rgb(0.0, 0.0, 0.0);
             let n = n as usize;
             // en-tête
-            let (Some(head), Some(body), Some(foot)) = (layout_for(ctx, &format!("{}    {}", j.title, j.date), w), layout_for(ctx, &j.text, w), layout_for(ctx, &format!("Page {} / {}", n + 1, j.pages.len()), w)) else { return };
-            head.set_wrap(gtk::pango::WrapMode::Char);
-            cr.move_to(0.0, 0.0);
-            pangocairo::functions::show_layout(&cr, &head);
+            let Some(body) = layout_for(ctx, &j.text, w) else { return };
+            let zones = |tpl: &str, y: f64| {
+                let z = crate::extras::zones(tpl, &j.title, &j.date, n as u32 + 1, j.pages.len() as u32);
+                for (text, al) in z.iter().zip([gtk::pango::Alignment::Left, gtk::pango::Alignment::Center, gtk::pango::Alignment::Right]) {
+                    if let Some(l) = layout_for(ctx, text, w) {
+                        l.set_wrap(gtk::pango::WrapMode::Char);
+                        l.set_alignment(al);
+                        cr.move_to(0.0, y);
+                        pangocairo::functions::show_layout(&cr, &l);
+                    }
+                }
+            };
+            zones(&j.header, 0.0);
             cr.set_line_width(0.5);
             cr.move_to(0.0, j.line_h * 1.4);
             cr.line_to(w, j.line_h * 1.4);
@@ -94,9 +113,7 @@ fn run(action: gtk::PrintOperationAction, export: Option<&str>) -> Result<usize,
             pangocairo::functions::show_layout(&cr, &body);
             let _ = cr.restore();
             // pied
-            foot.set_alignment(gtk::pango::Alignment::Right);
-            cr.move_to(0.0, h - j.line_h);
-            pangocairo::functions::show_layout(&cr, &foot);
+            zones(&j.footer, h - j.line_h);
         });
     }
     match op.run(action, Some(&a.win)) {

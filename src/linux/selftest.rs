@@ -307,6 +307,85 @@ gras et code
     }
     a.spell = false;
     crate::spell::check_visible();
+    // ---- propriétés YAML, liste des fonctions, favoris, enregistrer une copie, mise en page, récupération
+    let cfg = dir.join("cfg");
+    crate::prefs::init(cfg.clone());
+    lang("Markdown");
+    set("---
+titre: Un
+tags:
+  - a
+  - b
+---
+# Corps
+");
+    t.check("propriétés YAML : 2 lues (+ ligne d'ajout)", &crate::features::prop_items().len().to_string(), "3");
+    crate::features::set_property("titre: Deux");
+    t.check("propriété modifiée", &get(), "---
+titre: Deux
+tags:
+  - a
+  - b
+---
+# Corps
+");
+    crate::features::set_property("auteur: Momo");
+    t.check("propriété ajoutée", &get().contains("auteur: Momo
+---
+# Corps").to_string(), "true");
+    send(a.sci, sci::UNDO, 0, 0);
+    send(a.sci, sci::UNDO, 0, 0);
+    t.check("propriétés : annulables d'un seul geste chacune", &get(), "---
+titre: Un
+tags:
+  - a
+  - b
+---
+# Corps
+");
+    crate::features::set_property("titre:");
+    t.check("propriété vide = retirée", &(!get().contains("titre:") && get().contains("tags:")).to_string(), "true");
+    lang("Rust");
+    set("fn a() {
+}
+struct S;
+fn b() {
+}
+");
+    let sy = crate::features::symbols();
+    t.check("liste des fonctions : 3 symboles", &sy.len().to_string(), "3");
+    t.check("liste des fonctions : « fn b » ligne 4", &format!("{}", sy.last().map_or(0, |s| s.2 + 1)), "4");
+    let fav_file = dir.join("fav.txt");
+    std::fs::write(&fav_file, "x").ok();
+    edit::open_path(&fav_file.to_string_lossy());
+    on_command(FAVTOGGLE);
+    t.check("favori ajouté", &crate::features::favs().len().to_string(), "1");
+    on_command(FAVTOGGLE);
+    t.check("favori retiré", &crate::features::favs().len().to_string(), "0");
+    edit::close_tab(app().cur);
+    lang("Texte brut");
+    set("contenu copie");
+    app().docs[app().cur].dirty = true;
+    let (p0, copy) = (app().docs[app().cur].path.clone(), dir.join("copie.txt"));
+    t.check("enregistrer une copie : écrite", &(crate::features::write_copy(&copy.to_string_lossy()).is_ok() && std::fs::read_to_string(&copy).is_ok_and(|c| c == "contenu copie")).to_string(), "true");
+    t.check("enregistrer une copie : onglet inchangé", &(app().docs[app().cur].path == p0 && app().docs[app().cur].dirty).to_string(), "true");
+    let lay = crate::extras::PrintLayout { margin_mm: 15, header: "{fichier}".into(), footer: "||{page}".into() };
+    t.check("mise en page : enregistrée puis relue", &(lay.save(&cfg).is_ok() && crate::extras::PrintLayout::load(&crate::prefs::dir()) == lay).to_string(), "true");
+    set("secret perdu");
+    app().docs[app().cur].dirty = true;
+    crate::features::recovery_snapshot();
+    set("autre texte");
+    std::fs::write(cfg.join("running.lock"), "4294967000").ok(); // verrou d'un processus disparu = arrêt brutal
+    let nd = app().docs.len();
+    crate::features::recovery_start();
+    t.check("récupération après arrêt brutal : un onglet ajouté", &(app().docs.len() - nd).to_string(), "1");
+    t.check("récupération : texte retrouvé", &get(), "secret perdu");
+    app().docs[app().cur].dirty = false;
+    edit::close_tab(app().cur);
+    app().docs[app().cur].dirty = false;
+    crate::features::recovery_end();
+    t.check("sortie normale : verrou retiré", &(!cfg.join("running.lock").exists()).to_string(), "true");
+    lang("Texte brut");
     // ---- impression dans un PDF
     set(&(1..=300).map(|i| format!("ligne numero {i} avec un texte assez long pour la mise en page")).collect::<Vec<_>>().join("
 "));
