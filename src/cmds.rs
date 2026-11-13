@@ -800,6 +800,7 @@ pub fn on_command(id: usize) {
         SYMBOLS => palette::open(Mode::Symbols),
         SAVECOPY => crate::features::save_copy(),
         PAGESETUP => crate::features::page_setup(),
+        RECOVER => crate::features::recover_cmd(),
         GOTO => palette::open(Mode::Goto),
         PALETTE => palette::open(Mode::Commands),
         QUICKOPEN => palette::open(Mode::Quick),

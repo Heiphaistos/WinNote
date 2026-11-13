@@ -1,7 +1,8 @@
 //! Propriétés YAML, favoris, enregistrer une copie, mise en page, récupération après arrêt brutal (Windows).
 use crate::extras::{self, PrintLayout, Recovered};
 use crate::sci::{self, send};
-use crate::{app, cmds, doc, palette, prefs};
+use crate::{app, cmds, doc, prefs};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 fn cur_text() -> String {
     let a = app();
@@ -56,7 +57,7 @@ pub fn favs() -> Vec<String> {
 pub fn write_copy(path: &str) -> Result<(), String> {
     let a = app();
     let text = cmds::text_of_doc(a, a.cur);
-    std::fs::write(path, doc::encode(&text, a.docs[a.cur].enc)).map_err(|e| e.to_string())
+    std::fs::write(path, doc::encode(&text, a.docs[a.cur].enc)).map_err(|e| extras::io_err("Copie impossible à écrire", std::path::Path::new(path), &e))
 }
 
 /// « Enregistrer une copie... » : boîte d'enregistrement, puis écriture sans changer d'onglet.
@@ -65,27 +66,29 @@ pub fn save_copy() {
     let Some(p) = cmds::file_dialog(true, &format!("{} - copie", a.docs[a.cur].title())).into_iter().next() else { return };
     match write_copy(&p) {
         Ok(()) => cmds::msg_box(&format!("Copie enregistrée : {p}")),
-        Err(e) => cmds::msg_box(&format!("Échec de l'enregistrement de la copie : {e}")),
+        Err(e) => cmds::msg_box(&e),
     }
 }
 
 pub fn page_setup() {
-    let cur = PrintLayout::load(&prefs::dir()).to_line();
-    palette::input(
-        "Mise en page : marge (mm) ; en-tête ; pied — zones gauche|centre|droite, {fichier} {date} {page} {pages}",
-        &cur,
-        Box::new(|t| match PrintLayout::parse(&t) {
-            Some(l) => {
-                if let Err(e) = l.save(&prefs::dir()) {
-                    cmds::msg_box(&format!("Mise en page non enregistrée : {e}"));
-                }
-            }
-            None => cmds::msg_box("Format attendu : 25 ; {fichier}||{date} ; |Page {page} / {pages}|"),
-        }),
-    );
+    let dir = prefs::dir();
+    if let Some(l) = crate::pagedlg::show(&PrintLayout::load(&dir)) {
+        if let Err(e) = l.save(&dir) {
+            cmds::msg_box(&e);
+        }
+    }
 }
 
 // ---------- Récupération ----------
+
+static WARNED: AtomicBool = AtomicBool::new(false);
+
+/// Signale une panne de récupération une seule fois (la copie tourne toutes les 10 s : pas de boîte à répétition).
+fn warn_once(e: &str) {
+    if !WARNED.swap(true, Ordering::Relaxed) {
+        cmds::msg_box(&format!("La récupération après arrêt brutal ne fonctionne pas :\n{e}"));
+    }
+}
 
 /// Copies de secours des documents modifiés (appelée toutes les 10 s).
 pub fn recovery_snapshot() {
@@ -98,15 +101,14 @@ pub fn recovery_snapshot() {
             docs.push(Recovered { name, path, enc, text: cmds::text_of_doc(a, i) });
         }
     }
-    extras::recovery_snapshot(&prefs::dir(), &docs);
+    if let Err(e) = extras::recovery_snapshot(&prefs::dir(), &docs) {
+        warn_once(&e);
+    }
 }
 
-/// Au démarrage, après la session : si le lancement précédent s'est arrêté brutalement, rouvre les copies de secours plus récentes que la session.
-pub fn recovery_start() {
+/// Rouvre, comme documents modifiés, les copies des fenêtres disparues sans sortie normale. Renvoie les noms rouverts.
+fn recover() -> Vec<String> {
     let dir = prefs::dir();
-    if !extras::recovery_begin(&dir) {
-        return;
-    }
     let a = app();
     let open: Vec<(Option<String>, Vec<u8>)> = (0..a.docs.len()).map(|i| (a.docs[i].path.clone(), cmds::text_of_doc(a, i))).collect();
     let pending = extras::recovery_pending(&dir, &open);
@@ -115,9 +117,29 @@ pub fn recovery_start() {
         cmds::push_doc_full(a, None, Some((r.text.clone(), enc)), true, 0);
     }
     if !pending.is_empty() {
-        let names: Vec<&str> = pending.iter().map(|r| r.name.as_str()).collect();
-        cmds::msg_box(&format!("WinNote s'est arrêté brutalement : {} document(s) récupéré(s) dans de nouveaux onglets ({}).", pending.len(), names.join(", ")));
+        recovery_snapshot(); // les copies sont à nous avant d'effacer les traces de la fenêtre disparue
     }
+    extras::recovery_discard(&dir);
+    pending.into_iter().map(|r| r.name).collect()
+}
+
+/// Au démarrage, après la session : pose le verrou de cette fenêtre ; avec `claim`, rouvre les copies des fenêtres disparues.
+pub fn recovery_start(claim: bool) {
+    if let Err(e) = extras::recovery_register(&prefs::dir()) {
+        warn_once(&e);
+    }
+    if claim {
+        let names = recover();
+        if !names.is_empty() {
+            cmds::msg_box(&format!("WinNote s'est arrêté brutalement : {} document(s) récupéré(s) dans de nouveaux onglets ({}).", names.len(), names.join(", ")));
+        }
+    }
+}
+
+/// Commande « Restaurer les documents récupérés ».
+pub fn recover_cmd() {
+    let names = recover();
+    cmds::msg_box(&if names.is_empty() { "Aucun document à récupérer.".to_string() } else { format!("{} document(s) récupéré(s) dans de nouveaux onglets ({}).", names.len(), names.join(", ")) });
 }
 
 pub fn recovery_end() {

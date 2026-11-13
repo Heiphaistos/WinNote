@@ -371,20 +371,47 @@ fn b() {
     t.check("enregistrer une copie : onglet inchangé", &(app().docs[app().cur].path == p0 && app().docs[app().cur].dirty).to_string(), "true");
     let lay = crate::extras::PrintLayout { margin_mm: 15, header: "{fichier}".into(), footer: "||{page}".into() };
     t.check("mise en page : enregistrée puis relue", &(lay.save(&cfg).is_ok() && crate::extras::PrintLayout::load(&crate::prefs::dir()) == lay).to_string(), "true");
+    {
+        // boîte GTK de mise en page : champs remplis, lecture, séparateur de zone neutralisé
+        let (d, f) = crate::features::page_dialog(&lay);
+        t.check("mise en page : boîte remplie", &format!("{:?}", crate::features::page_read(&f)), "PrintLayout { margin_mm: 15, header: \"{fichier}||\", footer: \"||{page}\" }");
+        f.margin.set_value(30.0);
+        f.head[1].set_text("Titre; v2|x");
+        f.foot[2].set_text("{page}");
+        let l2 = crate::features::page_read(&f);
+        t.check("mise en page : boîte lue", &format!("{l2:?}"), "PrintLayout { margin_mm: 30, header: \"{fichier}|Titre; v2x|\", footer: \"||{page}\" }");
+        t.check("mise en page : « ; » relu depuis le fichier", &(l2.save(&cfg).is_ok() && crate::extras::PrintLayout::load(&cfg) == l2).to_string(), "true");
+        d.close();
+    }
     set("secret perdu");
     app().docs[app().cur].dirty = true;
     crate::features::recovery_snapshot();
     set("autre texte");
-    std::fs::write(cfg.join("running.lock"), "4294967000").ok(); // verrou d'un processus disparu = arrêt brutal
+    // une autre fenêtre disparue (pid inexistant) a laissé verrou + copie ; notre propre verrou et nos copies ne comptent pas
+    let dead = 4_294_967_000u32;
+    let ddir = cfg.join("recovery").join(dead.to_string());
+    std::fs::create_dir_all(&ddir).ok();
+    std::fs::write(cfg.join(format!("running-{dead}.lock")), dead.to_string()).ok();
+    std::fs::write(ddir.join("0.txt"), "perdu par l'autre fenêtre").ok();
+    std::fs::write(ddir.join("index.txt"), "0\t0\t\tAutre fenêtre\n").ok();
     let nd = app().docs.len();
-    crate::features::recovery_start();
-    t.check("récupération après arrêt brutal : un onglet ajouté", &(app().docs.len() - nd).to_string(), "1");
-    t.check("récupération : texte retrouvé", &get(), "secret perdu");
+    crate::features::recovery_start(true);
+    t.check("récupération après arrêt brutal : un onglet ajouté (nos copies exclues)", &(app().docs.len() - nd).to_string(), "1");
+    t.check("récupération : texte de l'autre fenêtre retrouvé", &get(), "perdu par l'autre fenêtre");
+    t.check("récupération : traces de l'autre fenêtre effacées après reprise", &(!cfg.join(format!("running-{dead}.lock")).exists() && !ddir.exists()).to_string(), "true");
+    let nd = app().docs.len();
+    on_command(RECOVER);
+    t.check("commande « Restaurer » : rien à reprendre", &(app().docs.len() - nd).to_string(), "0");
+    std::fs::create_dir_all(&ddir).ok();
+    std::fs::write(ddir.join("0.txt"), "deuxième disparition").ok();
+    std::fs::write(ddir.join("index.txt"), "0\t0\t\tAutre 2\n").ok();
+    on_command(RECOVER);
+    t.check("commande « Restaurer » : un onglet repris", &(app().docs.len() - nd).to_string(), "1");
     app().docs[app().cur].dirty = false;
     edit::close_tab(app().cur);
     app().docs[app().cur].dirty = false;
     crate::features::recovery_end();
-    t.check("sortie normale : verrou retiré", &(!cfg.join("running.lock").exists()).to_string(), "true");
+    t.check("sortie normale : verrou et copies de CETTE fenêtre retirés", &(!cfg.join(format!("running-{}.lock", std::process::id())).exists() && !cfg.join("recovery").join(std::process::id().to_string()).exists()).to_string(), "true");
     lang("Texte brut");
     // ---- impression dans un PDF
     set(&(1..=300).map(|i| format!("ligne numero {i} avec un texte assez long pour la mise en page")).collect::<Vec<_>>().join("

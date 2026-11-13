@@ -17,6 +17,7 @@ mod menubar;
 mod extras;
 mod features;
 mod notes;
+mod pagedlg;
 mod palette;
 mod assist;
 mod mdedit;
@@ -561,9 +562,8 @@ fn main() {
         if session::restore(a) && a.docs.len() > 1 && a.docs[0].path.is_none() && !a.docs[0].dirty && sci_empty(a, 0) {
             cmds::cmd_close(0);
         }
-        if !args.iter().any(|x| !x.starts_with("--")) {
-            features::recovery_start();
-        }
+        // verrou de cette fenêtre toujours posé ; copies des fenêtres disparues rouvertes seulement hors ouverture d'un fichier (commande manuelle sinon)
+        features::recovery_start(!args.iter().any(|x| !x.starts_with("--")));
         for p in args.iter().filter(|x| !x.starts_with("--")) {
             cmds::open_path(p);
         }

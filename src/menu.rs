@@ -48,6 +48,7 @@ pub fn build() -> Menus {
         add(f, SAVEALL, "Tout enregistrer\tCtrl+Alt+S");
         add(f, SAVECOPY, "Enregistrer une copie...");
         add(f, PAGESETUP, "Mise en page de l'impression...");
+        add(f, RECOVER, "Restaurer les documents récupérés");
         add(f, PRINT, "Imprimer...\tCtrl+P");
         add(f, RELOAD, "Recharger depuis le disque");
         add(f, DAILY, "Note du jour");

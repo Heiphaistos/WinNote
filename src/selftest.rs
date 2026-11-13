@@ -565,20 +565,53 @@ fn b() {
     t.check_bool("enregistrer une copie : onglet inchangé", a.docs[a.cur].path == p0 && a.docs[a.cur].dirty);
     let lay = crate::extras::PrintLayout { margin_mm: 15, header: "{fichier}".into(), footer: "||{page}".into() };
     t.check_bool("mise en page : enregistrée puis relue", lay.save(&cfg).is_ok() && crate::extras::PrintLayout::load(&crate::prefs::dir()) == lay);
+    {
+        // boîte graphique de mise en page : champs remplis, validation, annulation, marge invalide refusée
+        let (m, hd, ft) = crate::pagedlg::selftest_ids();
+        let dlg = crate::pagedlg::build(a.hwnd, &lay);
+        t.check_bool("mise en page : boîte construite", !dlg.is_null());
+        crate::pagedlg::selftest_set(dlg, m, "30");
+        crate::pagedlg::selftest_set(dlg, hd + 1, "Titre; v2");
+        crate::pagedlg::selftest_set(dlg, ft + 2, "{page}");
+        crate::pagedlg::selftest_ok(dlg);
+        let r = crate::pagedlg::run(dlg, std::ptr::null_mut());
+        t.check("mise en page : boîte validée", &format!("{r:?}"), "Some(PrintLayout { margin_mm: 30, header: \"{fichier}|Titre; v2|\", footer: \"||{page}\" })");
+        t.check_bool("mise en page : sauvegarde avec « ; » relue", r.as_ref().is_some_and(|l| l.save(&cfg).is_ok() && crate::extras::PrintLayout::load(&cfg) == *l));
+        let dlg = crate::pagedlg::build(a.hwnd, &lay);
+        crate::pagedlg::selftest_set(dlg, m, "abc");
+        crate::pagedlg::selftest_ok(dlg); // refusée (message), la boîte reste ouverte
+        crate::pagedlg::selftest_cancel(dlg);
+        t.check_bool("mise en page : marge invalide puis annulation = rien", crate::pagedlg::run(dlg, std::ptr::null_mut()).is_none());
+    }
     set("secret perdu");
     a.docs[a.cur].dirty = true;
     crate::features::recovery_snapshot();
     set("autre texte");
-    std::fs::write(cfg.join("running.lock"), "4294967000").ok(); // verrou d'un processus disparu = arrêt brutal
+    // une autre fenêtre disparue (pid inexistant) a laissé verrou + copie ; notre propre verrou et nos copies ne comptent pas
+    let dead = 4_294_967_000u32;
+    std::fs::create_dir_all(cfg.join("recovery").join(dead.to_string())).ok();
+    std::fs::write(cfg.join(format!("running-{dead}.lock")), dead.to_string()).ok();
+    std::fs::write(cfg.join("recovery").join(dead.to_string()).join("0.txt"), "perdu par l'autre fenêtre").ok();
+    std::fs::write(cfg.join("recovery").join(dead.to_string()).join("index.txt"), "0\t0\t\tAutre fenêtre\n").ok();
     let nd = a.docs.len();
-    crate::features::recovery_start();
-    t.check("récupération après arrêt brutal : un onglet ajouté", &(a.docs.len() - nd).to_string(), "1");
-    t.check("récupération : texte retrouvé", &String::from_utf8_lossy(&cmds::text_of_doc(a, a.cur)).into_owned(), "secret perdu");
+    crate::features::recovery_start(true);
+    t.check("récupération après arrêt brutal : un onglet ajouté (nos copies exclues)", &(a.docs.len() - nd).to_string(), "1");
+    t.check("récupération : texte de l'autre fenêtre retrouvé", &String::from_utf8_lossy(&cmds::text_of_doc(a, a.cur)).into_owned(), "perdu par l'autre fenêtre");
+    t.check_bool("récupération : traces de l'autre fenêtre effacées après reprise", !cfg.join(format!("running-{dead}.lock")).exists() && !cfg.join("recovery").join(dead.to_string()).exists());
+    // commande manuelle : rien à reprendre quand tout est déjà repris, puis une nouvelle disparition est reprise
+    let nd = a.docs.len();
+    cmds::on_command(RECOVER);
+    t.check("commande « Restaurer » : rien à reprendre", &(a.docs.len() - nd).to_string(), "0");
+    std::fs::create_dir_all(cfg.join("recovery").join(dead.to_string())).ok();
+    std::fs::write(cfg.join("recovery").join(dead.to_string()).join("0.txt"), "deuxième disparition").ok();
+    std::fs::write(cfg.join("recovery").join(dead.to_string()).join("index.txt"), "0\t0\t\tAutre 2\n").ok();
+    cmds::on_command(RECOVER);
+    t.check("commande « Restaurer » : un onglet repris", &(a.docs.len() - nd).to_string(), "1");
     a.docs[a.cur].dirty = false;
     cmds::cmd_close(a.cur);
     a.docs[a.cur].dirty = false;
     crate::features::recovery_end();
-    t.check_bool("sortie normale : verrou retiré", !cfg.join("running.lock").exists());
+    t.check_bool("sortie normale : verrou et copies de CETTE fenêtre retirés", !cfg.join(format!("running-{}.lock", std::process::id())).exists() && !cfg.join("recovery").join(std::process::id().to_string()).exists());
     lang("Texte brut");
 
     // ----- tous les langages : lexer chargé + au moins un octet coloré sur un échantillon -----

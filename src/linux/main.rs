@@ -178,7 +178,7 @@ fn main() {
     }
     if !a.nosession {
         edit::restore_session();
-        features::recovery_start();
+        features::recovery_start(files.is_empty()); // ouverture d'un fichier : copies des fenêtres disparues via la commande « Restaurer »
     }
     for p in &files {
         edit::open_path(p);

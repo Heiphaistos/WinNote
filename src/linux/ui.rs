@@ -431,6 +431,7 @@ pub fn on_command(id: usize) {
         SYMBOLS => palette(crate::features::symbols().into_iter().map(|(l, h, n)| (l, h, Act::Goto(n))).collect(), "Fonctions et titres"),
         SAVECOPY => crate::features::save_copy(),
         PAGESETUP => crate::features::page_setup(),
+        RECOVER => crate::features::recover_cmd(),
         PINTAB => {
             let p = !a.docs[doc_i].pinned;
             a.docs[doc_i].pinned = p;
@@ -717,6 +718,7 @@ fn build_menu(ag: &gtk::AccelGroup) -> gtk::MenuBar {
     check(&f, ag, "Suivre la fin du fichier (tail -f)", None, FOLLOW);
     add(&f, ag, "Enregistrer une copie...", None, SAVECOPY);
     add(&f, ag, "Mise en page de l'impression...", None, PAGESETUP);
+    add(&f, ag, "Restaurer les documents récupérés", None, RECOVER);
     add(&f, ag, "Imprimer...", Some("<Primary>p"), PRINT);
     add(&f, ag, "Ouvrir dans une nouvelle fenêtre", None, NEWWINDOW);
     f.append(&gtk::SeparatorMenuItem::new());
