@@ -1,5 +1,6 @@
 //! Aperçu Markdown, vue scindée, orthographe différée et menu contextuel de l'éditeur.
-use crate::mdrender::{render, BOLD, BOLDITAL, BULLET, CODE, CODEBLK, DIM, ITAL, LINK, QUOTE};
+use crate::lang::LANGS;
+use crate::mdrender::{render, DIM};
 use crate::sci::{self, send, HWND};
 use crate::theme::{blend, THEMES};
 use crate::{app, cstr, edit, spell};
@@ -8,6 +9,7 @@ use std::cell::Cell;
 
 thread_local! {
     static PENDING: Cell<bool> = const { Cell::new(false) };
+    static MD_PENDING: Cell<bool> = const { Cell::new(false) };
 }
 
 /// Configure la vue d'aperçu (lecture seule, sans marges, sans curseur).
@@ -33,31 +35,7 @@ pub fn restyle() {
     send(p, sci::STYLESETFORE, sci::STYLE_DEFAULT, t.fg as isize);
     send(p, sci::STYLESETBACK, sci::STYLE_DEFAULT, blend(t.bg, t.ui_bg, 18) as isize);
     send(p, sci::STYLECLEARALL, 0, 0);
-    let set = |st: usize, fore: u32, bold: bool, ital: bool, sz: i32| {
-        send(p, sci::STYLESETFORE, st, fore as isize);
-        send(p, sci::STYLESETBOLD, st, bold as isize);
-        send(p, sci::STYLESETITALIC, st, ital as isize);
-        if sz != 0 {
-            send(p, sci::STYLESETSIZE, st, sz as isize);
-        }
-    };
-    for (i, m) in [200, 165, 140, 120, 108, 100].iter().enumerate() {
-        set(i + 1, t.accent, true, false, size * m / 100);
-    }
-    set(BOLD as usize, t.fg, true, false, 0);
-    set(ITAL as usize, t.fg, false, true, 0);
-    set(BOLDITAL as usize, t.fg, true, true, 0);
-    set(CODE as usize, t.c[1], false, false, 0);
-    set(CODEBLK as usize, t.c[1], false, false, 0);
-    set(QUOTE as usize, blend(t.fg, t.bg, 30), false, true, 0);
-    set(LINK as usize, t.accent, false, false, 0);
-    send(p, 2059, LINK as usize, 1); // SCI_STYLESETUNDERLINE
-    set(DIM as usize, blend(t.fg, t.bg, 55), false, false, 0);
-    set(BULLET as usize, t.accent, true, false, 0);
-    for st in [CODE, CODEBLK] {
-        send(p, sci::STYLESETFONT, st as usize, cstr(edit::linux_font("Consolas")).as_ptr() as isize);
-        send(p, sci::STYLESETBACK, st as usize, blend(t.bg, t.fg, 8) as isize);
-    }
+    crate::mdstyle::attrs(p, t, size, [200, 165, 140, 120, 108, 100], edit::linux_font("Consolas"));
     send(p, sci::SETMARGINLEFT, 0, 28);
     send(p, sci::SETMARGINRIGHT, 0, 28);
     // vue scindée : même style que l'éditeur
@@ -149,6 +127,34 @@ pub fn on_tab_changed() {
     update_preview();
     crate::side::refresh();
     spell::check_visible();
+}
+
+/// Markdown en direct : restyle différé (60 ms) du document `i` ; un document sans nom en texte brut passe seul en Markdown.
+pub fn md_live(i: usize) {
+    let a = app();
+    let Some(d) = a.docs.get(i) else { return };
+    let (md, auto) = (LANGS[d.lang].lexer == "markdown", d.path.is_none() && d.lang == 0);
+    if !(md || auto) || MD_PENDING.with(|p| p.replace(true)) {
+        return;
+    }
+    let sci_ptr = d.sci;
+    gtk::glib::timeout_add_local_once(std::time::Duration::from_millis(if md { 60 } else { 400 }), move || {
+        MD_PENDING.with(|p| p.set(false));
+        let a = app();
+        let Some(i) = a.docs.iter().position(|d| d.sci == sci_ptr) else { return };
+        if md {
+            crate::mdstyle::apply(sci_ptr);
+        } else if a.docs[i].lang == 0 && crate::mdstyle::text_of(sci_ptr, 200_000).is_some_and(|t| crate::mdstyle::looks_markdown(&t)) {
+            if let Some(l) = LANGS.iter().position(|l| l.lexer == "markdown") {
+                a.docs[i].lang = l;
+                edit::set_lexer(sci_ptr, l);
+                edit::style_view(sci_ptr, l);
+                crate::ui::update_status();
+                crate::side::refresh();
+                update_preview();
+            }
+        }
+    });
 }
 
 /// Mise à jour différée (aperçu, plan, orthographe) après une modification ou un défilement.

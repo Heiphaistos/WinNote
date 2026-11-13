@@ -12,6 +12,7 @@ mod menubar;
 mod notes;
 mod palette;
 mod mdlive;
+mod mdstyle;
 mod print;
 mod selftest;
 mod sci;

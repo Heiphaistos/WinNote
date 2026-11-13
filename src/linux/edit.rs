@@ -61,8 +61,12 @@ pub fn text_of(i: usize) -> Vec<u8> {
 pub fn set_lexer(s: HWND, lang: usize) {
     let l = &LANGS[lang];
     unsafe {
-        if l.lexer.is_empty() {
+        if l.lexer.is_empty() || l.lexer == "markdown" {
+            // Markdown : styles posés par mdstyle (titres agrandis, gras, italique...), pas de Lexilla
             send(s, sci::SETILEXER, 0, 0);
+            if !l.lexer.is_empty() {
+                crate::mdstyle::apply(s);
+            }
         } else {
             let p = sci::CreateLexer(cstr(l.lexer).as_ptr());
             send(s, sci::SETILEXER, 0, p as isize);
@@ -94,7 +98,10 @@ pub fn style_view(s: HWND, lang: usize) {
     send(s, sci::SETCARETLINEVIS, 1, 0);
     send(s, sci::SETCARETLINEBACK, t.line as usize, 0);
     send(s, sci::SETWSFORE, 1, t.gutter as isize);
-    for &(st, cls) in LANGS[lang].map {
+    if LANGS[lang].lexer == "markdown" {
+        crate::mdstyle::attrs(s, t, a.size, [180, 150, 130, 115, 105, 100], linux_font("Consolas"));
+    }
+    for &(st, cls) in LANGS[lang].map.iter().filter(|_| LANGS[lang].lexer != "markdown") {
         send(s, sci::STYLESETFORE, st as usize, t.color(cls) as isize);
         send(s, sci::STYLESETBOLD, st as usize, matches!(cls, Cls::Head | Cls::Strong) as isize);
         send(s, sci::STYLESETITALIC, st as usize, matches!(cls, Cls::Emph) as isize);
@@ -174,6 +181,12 @@ unsafe extern "C" fn on_notify(_w: *mut c_void, _id: c_int, n: *mut c_void, data
                     let p = send(s, 2128, ln as usize, 0);
                     send(s, sci::GOTOPOS, p as usize, 0);
                 }
+            }
+        }
+        sci::SCN_MODIFIED => {
+            let mt = *(base.add(40) as *const i32) as u32;
+            if mt & (sci::SC_MOD_INSERTTEXT | sci::SC_MOD_DELETETEXT) != 0 {
+                crate::view::md_live(i);
             }
         }
         _ => {}

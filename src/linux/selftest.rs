@@ -232,6 +232,16 @@ echo v9
         }
         std::env::remove_var("WINNOTE_UPDATE_URL");
     }
+    // Markdown en direct
+    lang("Markdown");
+    set("# Titre\n**gras** et *it* et `c`\n- x");
+    crate::mdstyle::apply(app().sci);
+    let sty = |p: usize| send(app().sci, 2010, p, 0).to_string();
+    t.check("Markdown direct : titre H1", &sty(3), "1");
+    t.check("Markdown direct : gras", &sty(12), "7");
+    t.check("Markdown direct : italique", &sty(21), "8");
+    t.check("Markdown direct : code", &sty(29), "10");
+    t.check("Markdown direct : puce", &sty(32), "15");
     let _ = std::fs::remove_dir_all(&dir);
     t.log.push(format!("{} échec(s)", t.fails));
     let _ = std::fs::write(log_path, t.log.join("\n"));
