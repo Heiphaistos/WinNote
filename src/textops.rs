@@ -269,6 +269,39 @@ pub fn open_url(u: &str) {
     let _ = std::process::Command::new(if cfg!(target_os = "macos") { "open" } else { "xdg-open" }).arg(u).spawn();
 }
 
+/// Seuls http, https et mailto partent au système : tout autre texte (chemin d'exécutable, file:, \\serveur\partage, ms-*:) serait lancé tel quel.
+pub fn web_url(u: &str) -> bool {
+    let l = u.trim().to_ascii_lowercase();
+    (l.starts_with("http://") || l.starts_with("https://") || l.starts_with("mailto:")) && !l.chars().any(char::is_control)
+}
+
+/// Fichier visé par un lien relatif : toujours sous `base` (ni absolu, ni lecteur, ni UNC, ni « .. », ni flux NTFS « : »).
+pub fn local_target(base: &std::path::Path, name: &str) -> Option<std::path::PathBuf> {
+    let name = name.split('#').next().unwrap_or("").trim();
+    if name.is_empty() || name.contains(':') || name.starts_with(['/', '\\']) || name.chars().any(char::is_control) {
+        return None;
+    }
+    if name.split(['/', '\\']).any(|c| c == "..") {
+        return None;
+    }
+    Some(base.join(name))
+}
+
+/// « Ouvrir dans le navigateur » : seulement les types qu'un navigateur affiche (jamais un .exe, .bat, .lnk...).
+pub fn browser_safe(path: &str) -> bool {
+    let ext = std::path::Path::new(path).extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
+    matches!(ext.as_str(), "html" | "htm" | "xhtml" | "mhtml" | "svg" | "pdf" | "txt" | "md" | "markdown")
+}
+
+/// Plus grand indice <= `i` tombant sur une frontière de caractère (un décalage d'octets venu de Scintilla peut couper un caractère remplacé).
+fn floor_boundary(s: &str, i: usize) -> usize {
+    let mut i = i.min(s.len());
+    while !s.is_char_boundary(i) {
+        i -= 1;
+    }
+    i
+}
+
 /// Ouvre le lien [[note]], l'URL ou le chemin sous le curseur.
 pub fn open_link() {
     let a = app();
@@ -277,8 +310,8 @@ pub fn open_link() {
     let ln = send(s, sci::LINEFROMPOS, pos as usize, 0) as usize;
     let (p0, p1) = (send(s, sci::POSFROMLINE, ln, 0), send(s, sci::GETLINEENDPOS, ln, 0));
     let line = range_text(s, p0, p1);
-    let col = (pos - p0) as usize;
-    let find = |open: &str, close: &str| -> Option<String> {
+    let col = floor_boundary(&line, (pos - p0).max(0) as usize);
+    let find =|open: &str, close: &str| -> Option<String> {
         let mut from = 0;
         while let Some(i) = line[from..].find(open) {
             let st = from + i;
@@ -293,7 +326,10 @@ pub fn open_link() {
     if let Some(n) = find("[[", "]]") {
         let name = n.split('|').next().unwrap_or(&n).split('#').next().unwrap_or("").trim().to_string();
         let base = a.docs[a.cur].path.as_ref().and_then(|p| std::path::Path::new(p).parent().map(|d| d.to_path_buf())).or_else(|| a.root.as_ref().map(std::path::PathBuf::from));
-        let mut file = base.unwrap_or_default().join(&name);
+        let Some(mut file) = base.and_then(|b| local_target(&b, &name)) else {
+            msg_box("Lien refusé : une note doit rester dans le dossier du document (pas de chemin absolu, de « .. » ni de réseau).");
+            return;
+        };
         if file.extension().is_none() {
             file.set_extension("md");
         }
@@ -303,11 +339,19 @@ pub fn open_link() {
     let start = line[..col.min(line.len())].rfind(|c: char| c.is_whitespace() || "()<>\"'".contains(c)).map_or(0, |i| i + 1);
     let end = line[col.min(line.len())..].find(|c: char| c.is_whitespace() || "()<>\"'".contains(c)).map_or(line.len(), |i| i + col);
     let tok = &line[start..end.max(start)];
-    if tok.starts_with("http://") || tok.starts_with("https://") || tok.starts_with("mailto:") {
+    if web_url(tok) {
         open_url(tok);
     } else if let Some(m) = find("](", ")") {
-        open_url(&m);
-    } else if std::path::Path::new(tok).exists() {
+        let m = m.trim();
+        let doc_dir = a.docs[a.cur].path.as_ref().and_then(|p| std::path::Path::new(p).parent().map(|d| d.to_path_buf()));
+        if web_url(m) {
+            open_url(m);
+        } else if let Some(f) = doc_dir.and_then(|d| local_target(&d, m)).filter(|f| f.is_file()) {
+            crate::cmds::open_path(&f.to_string_lossy()); // ouvert dans WinNote, jamais exécuté
+        } else {
+            msg_box("Lien refusé : seuls http, https, mailto et les fichiers du dossier du document sont ouverts.");
+        }
+    } else if !tok.starts_with("\\\\") && std::path::Path::new(tok).is_file() {
         crate::cmds::open_path(tok);
     } else {
         msg_box("Aucun lien sous le curseur.");
@@ -391,5 +435,39 @@ mod col_tests {
         assert_eq!(col_text("a{n}b", 2), "a3b");
         assert_eq!(col_text("{n:10,5}", 2), "20");
         assert_eq!(col_text("{n", 0), "{n");
+    }
+}
+
+#[cfg(test)]
+mod link_tests {
+    use super::*;
+    use std::path::Path;
+    #[test]
+    fn web_only() {
+        for u in ["http://a.b", "HTTPS://a.b/x?y=1", "mailto:a@b.c"] {
+            assert!(web_url(u), "{u}");
+        }
+        for u in ["C:\\Windows\\System32\\calc.exe", "calc.exe", "file:///C:/x.exe", "\\\\srv\\share\\a.exe", "ms-msdt:/id", "javascript:alert(1)", "https://a\r\nb", "-oProxy"] {
+            assert!(!web_url(u), "{u}");
+        }
+    }
+    #[test]
+    fn local_links_stay_inside() {
+        let b = Path::new("notes");
+        assert_eq!(local_target(b, "a.md#t"), Some(b.join("a.md")));
+        assert_eq!(local_target(b, "sub/b"), Some(b.join("sub/b")));
+        for n in ["..\\x", "a/../../x", "/etc/passwd", "\\\\srv\\s\\f", "C:\\x", "a.md:stream", "", "#t", "a\0b"] {
+            assert_eq!(local_target(b, n), None, "{n:?}");
+        }
+    }
+    #[test]
+    fn browser_types() {
+        assert!(browser_safe("a.HTML") && browser_safe("x.pdf") && browser_safe("n.md"));
+        assert!(!browser_safe("a.exe") && !browser_safe("a.bat") && !browser_safe("a.lnk") && !browser_safe("noext"));
+    }
+    #[test]
+    fn boundary() {
+        assert_eq!(floor_boundary("aéb", 2), 1);
+        assert_eq!(floor_boundary("abc", 99), 3);
     }
 }
