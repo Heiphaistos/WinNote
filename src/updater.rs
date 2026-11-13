@@ -14,6 +14,7 @@ pub const WM_UPD_FOUND: u32 = 0x8001;
 pub const WM_UPD_READY: u32 = 0x8002;
 pub const WM_UPD_NONE: u32 = 0x8003;
 
+#[derive(Debug)]
 pub struct Found { pub version: String, pub url: String, pub sha: String }
 
 /// Résultat d'une vérification : Ok(Some) = nouvelle version, Ok(None) = à jour, Err = raison lisible.
@@ -80,7 +81,7 @@ fn split_url(u: &str) -> Option<(String, String)> {
     Some((h.to_string(), format!("/{p}")))
 }
 
-pub use crate::vers::{json_str, newer};
+pub use crate::vers::{digest_in, json_str, newer, trusted_download};
 
 pub fn sha256_hex(data: &[u8]) -> String {
     let mut out = [0u8; 32];
@@ -96,12 +97,19 @@ pub fn parse_release(body: &str, local: &str) -> Check {
     }
     let ai = body.find("winnote.exe\"").ok_or("la release ne contient pas winnote.exe")?;
     let url = json_str(&body[ai..], "browser_download_url").ok_or("lien de téléchargement introuvable")?;
-    let sha = match body[ai..].find("\"digest\":\"sha256:") {
-        Some(d) if body.len() >= ai + d + 17 + 64 => body[ai + d + 17..ai + d + 17 + 64].to_string(),
-        _ => {
+    if !trusted_download(&url) {
+        return Err(format!("lien de téléchargement refusé (seul github.com en HTTPS est accepté) : {url}"));
+    }
+    let sha = match digest_in(&body[ai..]) {
+        Some(h) => h,
+        None => {
             let (h, p) = split_url(&format!("{url}.sha256")).ok_or("URL invalide")?;
             let t = String::from_utf8_lossy(&http_get(&h, &p)?).to_string();
-            t.split_whitespace().next().ok_or("fichier .sha256 vide")?.to_lowercase()
+            let h = t.split_whitespace().next().ok_or("fichier .sha256 vide")?.to_lowercase();
+            if h.len() != 64 || !h.bytes().all(|b| b.is_ascii_hexdigit()) {
+                return Err("fichier .sha256 invalide".into());
+            }
+            h
         }
     };
     Ok(Some(Found { version: tag, url, sha }))
@@ -135,16 +143,35 @@ pub fn download(f: Found) {
             if sha256_hex(&bytes) != f.sha.to_lowercase() {
                 return Err("empreinte SHA-256 incorrecte : mise à jour refusée".into());
             }
-            let tmp = std::env::temp_dir().join("winnote-update.exe");
-            std::fs::write(&tmp, bytes).map_err(|e| e.to_string())?;
+            // create_new : un fichier ou un lien déposé d'avance sous ce nom dans %TEMP% est refusé, pas écrasé
+            let tmp = std::env::temp_dir().join(format!("winnote-update-{}.exe", std::process::id()));
+            let _ = std::fs::remove_file(&tmp);
+            {
+                use std::io::Write;
+                let mut file = std::fs::OpenOptions::new().write(true).create_new(true).open(&tmp).map_err(|e| e.to_string())?;
+                file.write_all(&bytes).map_err(|e| e.to_string())?;
+            }
+            *LAST_SHA.lock().unwrap_or_else(|e| e.into_inner()) = Some(f.sha.to_lowercase());
             Ok(tmp.to_string_lossy().to_string())
         })();
         post(WM_UPD_READY, res);
     });
 }
 
+/// Empreinte vérifiée du dernier téléchargement : contrôlée à nouveau juste avant l'installation (le fichier est resté dans %TEMP%).
+static LAST_SHA: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
 /// Remplace l'exe courant par le fichier téléchargé et relance WinNote.
+/// Si une empreinte est mémorisée (téléchargement par l'application), le fichier est re-haché : modifié depuis, il est refusé.
 pub fn apply(new_exe: &str) -> Result<(), String> {
+    let want = LAST_SHA.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    if let Some(want) = want {
+        let bytes = std::fs::read(new_exe).map_err(|e| e.to_string())?;
+        if sha256_hex(&bytes) != want {
+            let _ = std::fs::remove_file(new_exe);
+            return Err("le fichier téléchargé a changé depuis la vérification : mise à jour refusée".into());
+        }
+    }
     let cur = std::env::current_exe().map_err(|e| e.to_string())?;
     let old = cur.with_extension("old.exe");
     let _ = std::fs::remove_file(&old);
@@ -185,5 +212,15 @@ mod tests {
         assert!(f.url.ends_with("/winnote.exe") && f.sha.len() == 64);
         assert!(parse_release(API, "0.9.0").unwrap().is_none());
         assert!(parse_release("{}", "0.1.0").is_err());
+    }
+    #[test]
+    fn hostile_release_refused() {
+        let evil = API.replace("https://github.com/x/y", "https://evil.example/x");
+        assert!(parse_release(&evil, "0.3.0").unwrap_err().contains("refusé"));
+        let http = API.replace("https://github.com", "http://github.com");
+        assert!(parse_release(&http, "0.3.0").is_err());
+        // empreinte tronquée par des caractères multi-octets : erreur propre, pas de panique (panic = abort)
+        let cut = API.replace("7e525ac96a9f330b49f375b7d9a1af32486ce8c26b1588b7034b2242d4cb64da", "7e525ac96a9f330b49f375b7d9a1af32éééééééééééééééééééééééééééééé");
+        let _ = parse_release(&cut, "0.3.0");
     }
 }

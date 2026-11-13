@@ -40,6 +40,9 @@ fn api_url() -> String {
 fn curl(url: &str, out: Option<&str>) -> Result<Vec<u8>, String> {
     let mut c = Command::new("curl");
     c.args(["-fsSL", "--max-time", "300", "-A", "WinNote-updater"]);
+    if std::env::var_os("WINNOTE_UPDATE_URL").is_none() {
+        c.args(["--proto", "=https", "--proto-redir", "=https"]); // pas de repli en clair ni de redirection vers file://
+    }
     if let Some(o) = out {
         c.args(["-o", o]);
     }
@@ -75,10 +78,7 @@ pub fn parse_release(body: &str, local: &str) -> Check {
     let none = Found { version: tag.clone(), url: String::new(), sha: String::new() };
     let Some(ai) = body.find("-x86_64.AppImage\"") else { return Ok(Some(none)) };
     let Some(url) = json_str(&body[ai..], "browser_download_url") else { return Ok(Some(none)) };
-    let sha = match body[ai..].find("\"digest\":\"sha256:") {
-        Some(d) if body.len() >= ai + d + 17 + 64 => body[ai + d + 17..ai + d + 17 + 64].to_string(),
-        _ => return Err("la release ne fournit pas l'empreinte SHA-256 de l'AppImage".into()),
-    };
+    let Some(sha) = crate::vers::digest_in(&body[ai..]) else { return Err("la release ne fournit pas l'empreinte SHA-256 de l'AppImage".into()) };
     Ok(Some(Found { version: tag, url, sha }))
 }
 
@@ -98,7 +98,12 @@ pub fn check(manual: bool) {
 
 /// Télécharge à côté de la cible, vérifie l'empreinte, puis remplace (bloquant).
 pub fn install(f: &Found, target: &str) -> Result<(), String> {
+    // WINNOTE_UPDATE_URL (test local) lève la restriction : sinon HTTPS vers GitHub uniquement
+    if std::env::var_os("WINNOTE_UPDATE_URL").is_none() && !crate::vers::trusted_download(&f.url) {
+        return Err(format!("lien de téléchargement refusé (seul github.com en HTTPS est accepté) : {}", f.url));
+    }
     let tmp = format!("{target}.new");
+    let _ = std::fs::remove_file(&tmp); // jamais écrire à travers un lien déposé d'avance
     curl(&f.url, Some(&tmp))?;
     if sha256_file(&tmp).as_deref() != Ok(f.sha.to_lowercase().as_str()) {
         let _ = std::fs::remove_file(&tmp);
