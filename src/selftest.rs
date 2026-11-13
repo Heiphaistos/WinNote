@@ -405,6 +405,26 @@ autre").unwrap();
     t.check_bool("caractères sans perte en Windows-1251", crate::doc::lossless(get().as_bytes(), crate::doc::Enc::Win1251));
     t.check_bool("perte détectée en ANSI (cyrillique)", !crate::doc::lossless(get().as_bytes(), crate::doc::Enc::Ansi));
 
+    // ----- autocomplétion des mots + indentation par langage -----
+    lang("Rust");
+    set("foobar foobaz\n");
+    send(a.sci, sci::GOTOPOS, 14, 0);
+    for c in "foo".chars() {
+        unsafe { SendMessageW(a.sci, WM_CHAR, c as usize, 0) };
+    }
+    t.check("autocomplétion : liste affichée après 3 lettres", &send(a.sci, 2102, 0, 0).to_string(), "1");
+    send(a.sci, 2101, 0, 0); // AUTOCCANCEL
+    lang("Python");
+    t.check("indentation Python : 4 espaces", &format!("{} {}", send(a.sci, 2121, 0, 0), send(a.sci, 2125, 0, 0)), "4 0");
+    lang("YAML");
+    t.check("indentation YAML : 2 espaces", &format!("{} {}", send(a.sci, 2121, 0, 0), send(a.sci, 2125, 0, 0)), "2 0");
+    lang("Makefile");
+    t.check("indentation Makefile : tabulations", &send(a.sci, 2125, 0, 0).to_string(), "1");
+    cmds::on_command(INDENT_AUTO + 3);
+    t.check("indentation forcée : 8 espaces", &format!("{} {}", send(a.sci, 2121, 0, 0), send(a.sci, 2125, 0, 0)), "8 0");
+    cmds::on_command(INDENT_AUTO);
+    lang("Texte brut");
+
     // ----- tous les langages : lexer chargé + au moins un octet coloré sur un échantillon -----
     for (i, l) in LANGS.iter().enumerate() {
         if l.lexer.is_empty() || l.lexer == "markdown" {

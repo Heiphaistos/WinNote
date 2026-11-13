@@ -99,6 +99,9 @@ pub const SPLIT: usize = 855;
 pub const SPELL: usize = 856;
 pub const DWRITE: usize = 857;
 pub const FOLLOW: usize = 858;
+pub const AUTOCOMP: usize = 859;
+pub const INDENT_AUTO: usize = 880; // 880 auto, 881 = 2 espaces, 882 = 4, 883 = 8, 884 = tabulations
+pub const KEYS: usize = 885;
 pub const SPELLLANG: usize = 860; // 860..864
 pub const SPELLFIX: usize = 900; // 900..904
 pub const SPELLADD: usize = 905;
@@ -142,5 +145,6 @@ pub static PALETTE_CMDS: &[(usize, &str)] = &[
     (MD_QUOTE, "Markdown : citation"), (MD_BULLET, "Markdown : liste à puces"), (MD_NUMLIST, "Markdown : liste numérotée"), (MD_TASK, "Markdown : liste de tâches"),
     (MD_LINK, "Markdown : lien"), (MD_WIKI, "Markdown : lien [[note]]"), (MD_TABLE, "Markdown : tableau"), (MD_CODEBLOCK, "Markdown : bloc de code"), (MD_HR, "Markdown : ligne horizontale"), (MD_CALLOUT, "Markdown : encadré (callout)"),
     (MD_H1, "Markdown : titre 1"), (MD_H1 + 1, "Markdown : titre 2"), (MD_H1 + 2, "Markdown : titre 3"), (MD_H1 + 3, "Markdown : titre 4"), (MD_H1 + 4, "Markdown : titre 5"), (MD_H1 + 5, "Markdown : titre 6"),
+    (AUTOCOMP, "Format : autocomplétion des mots"), (INDENT_AUTO, "Format : indentation selon le langage"), (INDENT_AUTO + 1, "Format : indenter avec 2 espaces"), (INDENT_AUTO + 2, "Format : indenter avec 4 espaces"), (INDENT_AUTO + 3, "Format : indenter avec 8 espaces"), (INDENT_AUTO + 4, "Format : indenter avec des tabulations"), (KEYS, "Raccourcis clavier personnalisés..."),
     (UPDATE, "Rechercher une mise à jour"), (AUTOUPDATE, "Mises à jour automatiques : activer / couper"), (ABOUT, "À propos de WinNote"),
 ];

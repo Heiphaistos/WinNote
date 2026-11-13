@@ -10,6 +10,10 @@ pub mod ids;
 pub mod lang;
 #[path = "../fileops.rs"]
 pub mod fileops;
+#[path = "../prefs.rs"]
+pub mod prefs;
+#[path = "../keymap.rs"]
+pub mod keymap;
 #[path = "../findx.rs"]
 pub mod findx;
 #[path = "../assist.rs"]

@@ -6,7 +6,7 @@ use crate::ids::*;
 use crate::lang::LANGS;
 use crate::sci::{self, send};
 use crate::theme::{LAYOUTS, THEMES};
-use crate::{app, chrome, cstr, notes, side, spell, textops, view, App};
+use crate::{app, chrome, cstr, keymap, notes, prefs, side, spell, textops, view, App};
 use gtk::prelude::*;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -80,6 +80,8 @@ pub fn sync_checks() {
                 SPLIT => a.split,
                 SPELL => a.spell,
                 TOPMOST => a.topmost,
+                AUTOCOMP => prefs::autocomp(),
+                x if (INDENT_AUTO..INDENT_AUTO + 5).contains(&x) => x - INDENT_AUTO == match prefs::indent() { prefs::Indent::Auto => 0, prefs::Indent::Spaces(2) => 1, prefs::Indent::Spaces(4) => 2, prefs::Indent::Spaces(8) => 3, _ => 4 },
                 READONLY => !a.docs.is_empty() && send(a.sci, sci::GETREADONLY, 0, 0) != 0,
                 AUTOUPDATE => a.auto_update,
                 CHROME_WIN => a.chrome == 0,
@@ -356,6 +358,26 @@ pub fn on_command(id: usize) {
         EXIT => quit(),
         RELOAD => edit::reload(),
         FOLLOW => edit::toggle_follow(),
+        AUTOCOMP => {
+            prefs::set_autocomp(!prefs::autocomp());
+            sync_checks();
+        }
+        880..=884 => {
+            use prefs::Indent;
+            prefs::set_indent([Indent::Auto, Indent::Spaces(2), Indent::Spaces(4), Indent::Spaces(8), Indent::Tabs][id - INDENT_AUTO]);
+            for t in &a.docs {
+                edit::style_view(t.sci, t.lang);
+            }
+            sync_checks();
+        }
+        KEYS => {
+            let p = keymap::file_path();
+            if !p.exists() {
+                let _ = std::fs::create_dir_all(p.parent().unwrap_or(std::path::Path::new(".")));
+                let _ = std::fs::write(&p, keymap::template());
+            }
+            edit::open_path(&p.to_string_lossy());
+        }
         REVEALFILE => {
             if let Some(p) = a.docs[doc_i].path.as_ref().and_then(|p| std::path::Path::new(p).parent().map(|d| d.to_path_buf())) {
                 textops::open_url(&p.to_string_lossy());
@@ -636,6 +658,15 @@ fn build_menu(ag: &gtk::AccelGroup) -> gtk::MenuBar {
     let fm = sub(&bar, "Format");
     check(&fm, ag, "Retour automatique à la ligne", None, WRAP);
     add(&fm, ag, "Police...", None, FONT);
+    check(&fm, ag, "Autocomplétion des mots (code)", None, AUTOCOMP);
+    let ind = gtk::Menu::new();
+    let ind_item = gtk::MenuItem::with_label("Indentation");
+    ind_item.set_submenu(Some(&ind));
+    fm.append(&ind_item);
+    for (i, t) in ["Selon le langage", "2 espaces", "4 espaces", "8 espaces", "Tabulations"].iter().enumerate() {
+        check(&ind, ag, t, None, INDENT_AUTO + i);
+    }
+    add(&fm, ag, "Raccourcis clavier personnalisés...", None, KEYS);
     let eol = gtk::Menu::new();
     let eol_item = gtk::MenuItem::with_label("Fins de ligne");
     eol_item.set_submenu(Some(&eol));
@@ -746,6 +777,7 @@ pub fn build_app(test: bool) -> App {
     win.set_icon_name(Some("winnote"));
     let ag = gtk::AccelGroup::new();
     win.add_accel_group(&ag);
+    user_accels(&ag);
     let vbox = gtk::Box::new(gtk::Orientation::Vertical, 0);
     let bar = chrome::Bar::new();
     vbox.pack_start(&bar.root, false, false, 0);
@@ -816,5 +848,15 @@ pub fn build_app(test: bool) -> App {
         spell_lang: "fr_FR".into(), topmost: false, auto_update: true, nosession: false, docs: Vec::new(), cur: 0, sci: std::ptr::null_mut(), untitled: 0, theme: 0, layout: 0,
         wrap: l.wrap, lines: l.lines, ws: false, fold: false, font: l.font.into(), size: l.size, margin: l.margin, spacing: 0,
         root: None, recent: Vec::new(), closed: Vec::new(), quiet: test,
+    }
+}
+
+/// Raccourcis personnalisés (raccourcis.txt) : un élément de menu caché par combinaison.
+fn user_accels(ag: &gtk::AccelGroup) {
+    for (chord, id) in keymap::user() {
+        let it = gtk::MenuItem::new();
+        accel(&it, ag, &keymap::gtk_spec(&chord));
+        it.connect_activate(move |_| on_command(id));
+        std::mem::forget(it);
     }
 }

@@ -87,7 +87,7 @@ impl Bar {
         });
         sel.connect_toggled(|b| {
             let s = app().sci;
-            let (ss, se) = (send(s, sci::GETSELSTART, 0, 0), send(s, sci::GETSELEND, 0, 0));
+            let (ss, se) = crate::findx::pending().unwrap_or((send(s, sci::GETSELSTART, 0, 0), send(s, sci::GETSELEND, 0, 0)));
             crate::findx::set_sel(if b.is_active() && se > ss { Some((ss, se)) } else { None });
             if b.is_active() && se <= ss {
                 b.set_active(false);
@@ -299,6 +299,9 @@ pub fn open(replace: bool) {
             a.find.find.set_text(&t);
         }
     }
+    crate::findx::set_sel(None);
+    a.find.sel.set_active(false);
+    crate::findx::set_pending((se > ss && send(s, 2166, ss as usize, 0) != send(s, 2166, se as usize, 0)).then_some((ss, se)));
     a.find.root.show();
     if replace { a.find.repl_row.show() } else { a.find.repl_row.hide() }
     a.find.find.grab_focus();
@@ -309,6 +312,9 @@ pub fn open(replace: bool) {
 pub fn close_bar() {
     let a = app();
     a.find.root.hide();
+    crate::findx::set_sel(None);
+    crate::findx::set_pending(None);
+    a.find.sel.set_active(false);
     for d in &a.docs {
         send(d.sci, sci::SETINDICCURRENT, INDIC, 0);
         send(d.sci, sci::INDICCLEAR, 0, send(d.sci, sci::GETLENGTH, 0, 0));

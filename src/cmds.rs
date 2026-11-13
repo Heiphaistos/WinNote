@@ -71,6 +71,7 @@ fn style_editor(a: &App) {
 
 fn style_view(a: &App, s: HWND) {
     let t = &THEMES[a.theme];
+    crate::prefs::apply_indent(s, a.docs.get(a.cur).map_or(0, |d| d.lang));
     let sc = |v: i32| (v * a.dpi as i32 / 96) as isize;
     send(s, sci::STYLESETFONT, sci::STYLE_DEFAULT, cstr(&a.font).as_ptr() as isize);
     send(s, sci::STYLESETSIZE, sci::STYLE_DEFAULT, a.size as isize);
@@ -213,6 +214,9 @@ pub fn refresh() {
             chk(FOLDMARGIN, a.fold);
             chk(ZEN, a.zen);
             chk(TOPMOST, a.topmost);
+            chk(AUTOCOMP, crate::prefs::autocomp());
+            let ind = match crate::prefs::indent() { crate::prefs::Indent::Auto => 0, crate::prefs::Indent::Spaces(2) => 1, crate::prefs::Indent::Spaces(4) => 2, crate::prefs::Indent::Spaces(8) => 3, _ => 4 };
+            CheckMenuRadioItem(m, INDENT_AUTO as u32, (INDENT_AUTO + 4) as u32, (INDENT_AUTO + ind) as u32, MF_BYCOMMAND);
             chk(FOLLOW, a.docs.get(a.cur).is_some_and(|d| d.follow));
             chk(READONLY, send(a.sci, sci::GETREADONLY, 0, 0) != 0);
             chk(AUTOUPDATE, a.auto_update);
@@ -573,6 +577,11 @@ pub fn save_doc(a: &mut App, i: usize, as_new: bool) -> bool {
         crate::session::add_recent(&path);
     }
     a.docs[i].dirty = false;
+    if std::path::Path::new(&path) == crate::keymap::file_path() {
+        crate::keymap::reload();
+        unsafe { windows_sys::Win32::UI::WindowsAndMessaging::DestroyAcceleratorTable(a.accel) };
+        a.accel = crate::menu::build_accel();
+    }
     refresh();
     true
 }
@@ -695,6 +704,20 @@ pub fn on_command(id: usize) {
         },
         PRINT => crate::print::print_doc(),
         RELOAD => reload(a),
+        AUTOCOMP => crate::prefs::set_autocomp(!crate::prefs::autocomp()),
+        880..=884 => {
+            use crate::prefs::Indent;
+            crate::prefs::set_indent([Indent::Auto, Indent::Spaces(2), Indent::Spaces(4), Indent::Spaces(8), Indent::Tabs][id - INDENT_AUTO]);
+            style_editor(a);
+        }
+        KEYS => {
+            let p = crate::keymap::file_path();
+            if !p.exists() {
+                let _ = std::fs::create_dir_all(p.parent().unwrap_or(std::path::Path::new(".")));
+                let _ = std::fs::write(&p, crate::keymap::template());
+            }
+            open_path(&p.to_string_lossy());
+        }
         FOLLOW => {
             a.docs[a.cur].follow = !a.docs[a.cur].follow;
             if a.docs[a.cur].follow {

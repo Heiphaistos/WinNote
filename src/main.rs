@@ -4,6 +4,8 @@ mod cmds;
 mod doc;
 mod findbar;
 mod findx;
+mod keymap;
+mod prefs;
 mod fileops;
 mod ids;
 mod lang;
@@ -519,6 +521,9 @@ fn main() {
 
         let mut a = Box::new(settings::defaults());
         settings::load(&mut a);
+        let cfg = std::path::PathBuf::from(std::env::var("APPDATA").unwrap_or_default()).join("WinNote");
+        prefs::init(cfg.clone());
+        keymap::init(cfg);
         session::load_recent(&mut a);
         APP = Box::into_raw(a);
 

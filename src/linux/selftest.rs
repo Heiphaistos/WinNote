@@ -137,6 +137,75 @@ pub fn run(log_path: &str) -> i32 {
         t.check(&format!("enregistrer puis rouvrir en {}", enc.name()), &get().replace('\r', ""), src);
         t.check(&format!("encodage {} redétecté", enc.name()), &(a.docs[a.cur].enc == *enc).to_string(), "true");
     }
+    // recherche : mode étendu, dans la sélection, tous les onglets
+    set("a\nb a\nb");
+    a.find.case.set_active(false);
+    a.find.find.set_text("a\nb");
+    a.find.repl.set_text("X");
+    a.find.ext.set_active(true);
+    find::replace_all();
+    t.check("mode étendu : \n remplacé", &get(), "X X");
+    a.find.ext.set_active(false);
+    set("a a a a");
+    a.find.find.set_text("a");
+    a.find.repl.set_text("bb");
+    send(a.sci, sci::SETSEL, 2, 5);
+    crate::findx::set_pending(Some((2, 5)));
+    a.find.sel.set_active(true);
+    find::replace_all();
+    t.check("remplacer dans la sélection seulement", &get(), "a bb bb a");
+    a.find.sel.set_active(false);
+    edit::new_tab(None, None, false, 0);
+    set("a");
+    edit::new_tab(None, None, false, 0);
+    set("a a");
+    a.find.repl.set_text("c");
+    find::replace_all_tabs();
+    t.check("tous les onglets : onglet courant", &get(), "c c");
+    edit::switch_to(a.cur - 1);
+    t.check("tous les onglets : onglet précédent", &get(), "c");
+    // fichier modifié sur le disque + suivi de fin
+    let extp = std::env::temp_dir().join(format!("wn_ext_{}.txt", std::process::id()));
+    std::fs::write(&extp, "un").ok();
+    edit::open_path(&extp.to_string_lossy());
+    std::thread::sleep(std::time::Duration::from_millis(30));
+    std::fs::write(&extp, "un\ndeux").ok();
+    edit::check_external();
+    t.check("rechargement automatique d'un fichier modifié", &get(), "un\ndeux");
+    on_command(FOLLOW);
+    std::thread::sleep(std::time::Duration::from_millis(30));
+    std::fs::write(&extp, "un\ndeux\ntrois").ok();
+    edit::check_external();
+    t.check("suivi de fin : curseur en fin de fichier", &send(a.sci, sci::GETCURRENTPOS, 0, 0).to_string(), "13");
+    on_command(FOLLOW);
+    let _ = std::fs::remove_file(&extp);
+    // recharger avec un encodage
+    let cyr = std::env::temp_dir().join(format!("wn_cyr_{}.txt", std::process::id()));
+    std::fs::write(&cyr, crate::doc::encode("Привет мир".as_bytes(), Enc::Win1251)).ok();
+    edit::open_path(&cyr.to_string_lossy());
+    on_command(RENC + 6);
+    t.check("recharger avec l'encodage Cyrillique", &get(), "Привет мир");
+    let _ = std::fs::remove_file(&cyr);
+    // autocomplétion + indentation par langage
+    lang("Rust");
+    set("foobar foobaz\n");
+    send(a.sci, sci::GOTOPOS, 14, 0);
+    for ch in b"foo" {
+        send(a.sci, sci::ADDTEXT, 1, ch as *const u8 as isize);
+        crate::assist::on_char(a.sci, *ch, true, false);
+    }
+    t.check("autocomplétion : liste affichée après 3 lettres", &send(a.sci, 2102, 0, 0).to_string(), "1");
+    send(a.sci, 2101, 0, 0);
+    lang("Python");
+    t.check("indentation Python : 4 espaces", &format!("{} {}", send(a.sci, 2121, 0, 0), send(a.sci, 2125, 0, 0)), "4 0");
+    lang("YAML");
+    t.check("indentation YAML : 2 espaces", &format!("{} {}", send(a.sci, 2121, 0, 0), send(a.sci, 2125, 0, 0)), "2 0");
+    lang("Makefile");
+    t.check("indentation Makefile : tabulations", &send(a.sci, 2125, 0, 0).to_string(), "1");
+    on_command(INDENT_AUTO + 3);
+    t.check("indentation forcée : 8 espaces", &format!("{} {}", send(a.sci, 2121, 0, 0), send(a.sci, 2125, 0, 0)), "8 0");
+    on_command(INDENT_AUTO);
+    lang("Texte brut");
     // liens [[note]]
     set("voir [[note-x]] ici");
     send(a.sci, sci::SETSEL, 8, 8);

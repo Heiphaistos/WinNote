@@ -264,6 +264,8 @@ pub fn open(replace: bool) {
             unsafe { SetWindowTextW(a.find_edit, w(&t).as_ptr()) };
         }
     }
+    crate::findx::set_sel(None);
+    crate::findx::set_pending((se > ss && send(s, 2166, ss as usize, 0) != send(s, 2166, se as usize, 0)).then_some((ss, se)));
     a.find_vis = true;
     a.find_replace = replace;
     layout_edits();
@@ -282,6 +284,8 @@ pub fn close() {
         return;
     }
     a.find_vis = false;
+    crate::findx::set_sel(None);
+    crate::findx::set_pending(None);
     send(a.sci, sci::SETINDICCURRENT, INDIC, 0);
     send(a.sci, sci::INDICCLEAR, 0, send(a.sci, sci::GETLENGTH, 0, 0));
     unsafe { ShowWindow(a.find_bar, SW_HIDE) };
@@ -420,7 +424,7 @@ pub unsafe extern "system" fn proc_(h: HWND, m: u32, wp: WPARAM, lp: LPARAM) -> 
                         Btn::Regex => a.f_regex = !a.f_regex,
                         Btn::Ext => crate::findx::set_ext(!crate::findx::ext()),
                         Btn::Sel => {
-                            let (ss, se) = (send(a.sci, sci::GETSELSTART, 0, 0), send(a.sci, sci::GETSELEND, 0, 0));
+                            let (ss, se) = crate::findx::pending().unwrap_or((send(a.sci, sci::GETSELSTART, 0, 0), send(a.sci, sci::GETSELEND, 0, 0)));
                             crate::findx::set_sel(if crate::findx::in_sel() || se <= ss { None } else { Some((ss, se)) });
                         }
                         Btn::AllTabs => replace_all_tabs(),

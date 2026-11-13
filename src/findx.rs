@@ -7,6 +7,7 @@ thread_local! {
     static EXT: Cell<bool> = const { Cell::new(false) };
     static SEL: Cell<Option<(isize, isize)>> = const { Cell::new(None) };
     static HIST: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+    static PENDING: Cell<Option<(isize, isize)>> = const { Cell::new(None) };
     static HPOS: Cell<usize> = const { Cell::new(0) };
 }
 
@@ -21,6 +22,9 @@ pub fn range(len: isize) -> (isize, isize) {
 pub fn shift_end(d: isize) {
     SEL.with(|e| if let Some((a, b)) = e.get() { e.set(Some((a, (b + d).max(a)))) })
 }
+/// Sélection multi-lignes présente à l'ouverture de la barre : c'est elle que « dans la sélection » vise.
+pub fn set_pending(s: Option<(isize, isize)>) { PENDING.with(|e| e.set(s)) }
+pub fn pending() -> Option<(isize, isize)> { PENDING.with(|e| e.get()) }
 pub fn in_sel() -> bool { SEL.with(|e| e.get()).is_some() }
 
 /// Interprète \n \r \t \0 \\ et \xNN (mode « étendu » de Notepad++).

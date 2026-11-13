@@ -312,7 +312,7 @@ fn selected() -> Option<(String, bool)> {
 fn context_menu(e: &gtk::gdk::EventButton) {
     let on = selected().is_some_and(|s| !s.0.is_empty());
     let menu = gtk::Menu::new();
-    let mut add = |label: &str, act: u8, enabled: bool| {
+    let add = |label: &str, act: u8, enabled: bool| {
         let it = gtk::MenuItem::with_label(label);
         it.set_sensitive(enabled);
         it.connect_activate(move |_| file_action(act));

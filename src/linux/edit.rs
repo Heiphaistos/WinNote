@@ -139,7 +139,7 @@ pub fn style_view(s: HWND, lang: usize) {
     send(s, sci::SETADDSELTYPING, 1, 0);
     send(s, sci::SETMULTIPASTE, 1, 0);
     send(s, sci::SETVIRTUALSPACE, 1, 0);
-    send(s, sci::SETTABWIDTH, 4, 0);
+    crate::prefs::apply_indent(s, lang);
     send(s, sci::SETSCROLLW, 1, 0);
     send(s, sci::SETSCROLLWTRACK, 1, 0);
     send(s, sci::USEPOPUP, 1, 0);
@@ -546,6 +546,8 @@ pub fn add_recent(p: &str) {
 
 pub fn load_settings() {
     let a = app();
+    crate::prefs::init(cfg_dir());
+    crate::keymap::init(cfg_dir());
     if let Ok(s) = std::fs::read_to_string(cfg_dir().join("recent.txt")) {
         a.recent = s.lines().filter(|l| !l.is_empty()).map(String::from).collect();
     }

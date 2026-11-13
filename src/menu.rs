@@ -114,6 +114,13 @@ pub fn build() -> Menus {
         add(eol, EOL + 1, "Macintosh (CR)");
         add(eol, EOL + 2, "Unix (LF)");
 
+        add(fm, AUTOCOMP, "Autocomplétion des mots (code)");
+        let ind = sub(&[fm], "Indentation");
+        for (i, t) in ["Selon le langage", "2 espaces", "4 espaces", "8 espaces", "Tabulations"].iter().enumerate() {
+            add(ind, INDENT_AUTO + i, t);
+        }
+        add(fm, KEYS, "Raccourcis clavier personnalisés...");
+
         let md = sub(&[fm], "Markdown");
         add(md, MD_BOLD, "Gras	Ctrl+B");
         add(md, MD_ITALIC, "Italique	Ctrl+I");
@@ -232,7 +239,11 @@ pub fn build_accel() -> HACCEL {
     let al = (FVIRTKEY | FALT) as u8;
     let k = |virt: u8, key: u16, cmd: usize| ACCEL { fVirt: virt, key, cmd: cmd as u16 };
     let ch = |x: char| x as u16;
-    let t = [
+    let mut t: Vec<ACCEL> = crate::keymap::user()
+        .iter()
+        .filter_map(|(ch, id)| crate::keymap::vk(&ch.key).map(|key| ACCEL { fVirt: FVIRTKEY as u8 | if ch.ctrl { FCONTROL as u8 } else { 0 } | if ch.shift { FSHIFT as u8 } else { 0 } | if ch.alt { FALT as u8 } else { 0 }, key, cmd: *id as u16 }))
+        .collect();
+    t.extend([
         k(c, ch('N'), NEW), k(c, ch('T'), NEW), k(c, ch('O'), OPEN), k(c, ch('S'), SAVE), k(cs, ch('S'), SAVEAS), k(c | FALT as u8, ch('S'), SAVEALL),
         k(c, ch('W'), CLOSE), k(cs, ch('T'), REOPEN), k(c, ch('F'), FIND), k(c, ch('H'), REPLACE), k(cs, ch('F'), FINDINFILES), k(c, ch('G'), GOTO),
         k(FVIRTKEY as u8, VK_F3, FINDNEXT), k((FVIRTKEY | FSHIFT) as u8, VK_F3, FINDPREV), k(FVIRTKEY as u8, VK_F5, DATETIME), k(FVIRTKEY as u8, VK_F11, ZEN),
@@ -241,7 +252,7 @@ pub fn build_accel() -> HACCEL {
         k(FVIRTKEY as u8, VK_F2, BOOKNEXT), k((FVIRTKEY | FSHIFT) as u8, VK_F2, BOOKPREV), k(c, VK_F2, BOOKTOGGLE),
         k(c, VK_TAB, TABNEXT), k(cs, VK_TAB, TABPREV), k(c, 0xBB, ZOOMIN), k(c, 0xBD, ZOOMOUT), k(c, ch('0'), ZOOMRESET),
         k(cs, ch('P'), PALETTE), k(c, ch('P'), PRINT), k(c, ch('E'), QUICKOPEN), k(cs, ch('E'), SIDEBAR), k(cs, ch('O'), OUTLINE), k(cs, ch('M'), PREVIEW), k(c, 0xDC, SPLIT),
-    ];
+    ]);
     unsafe { CreateAcceleratorTableW(t.as_ptr(), t.len() as i32) }
 }
 
