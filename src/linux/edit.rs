@@ -113,8 +113,8 @@ pub fn style_view(s: HWND, lang: usize) {
     let w0 = if a.lines { send(s, sci::TEXTWIDTH, sci::STYLE_LINENUM, cstr("_99999").as_ptr() as isize) } else { 0 };
     send(s, sci::SETMARGINW, 0, w0);
     send(s, sci::SETMARGINTYPE, 1, 0);
-    send(s, sci::SETMARGINMASK, 1, 2);
-    send(s, sci::SETMARGINW, 1, if a.lines || a.fold { 14 } else { 0 });
+    send(s, sci::SETMARGINMASK, 1, 2 | 0x01E0_0000);
+    send(s, sci::SETMARGINW, 1, if a.lines || a.fold || crate::prefs::history() { 14 } else { 0 });
     send(s, sci::MARKERDEFINE, 1, 0);
     send(s, sci::MARKERSETFORE, 1, t.accent as isize);
     send(s, sci::MARKERSETBACK, 1, t.accent as isize);
@@ -172,6 +172,7 @@ unsafe extern "C" fn on_notify(_w: *mut c_void, _id: c_int, n: *mut c_void, data
             crate::ui::update_status();
             crate::view::schedule();
             crate::assist::brace_highlight(a.docs[i].sci);
+            crate::assist::smart_highlight(a.docs[i].sci);
         }
         2009 => crate::macros::on_record(*(base.add(72) as *const i32) as u32, *(base.add(80) as *const usize), *(base.add(88) as *const isize)),
         2001 => {

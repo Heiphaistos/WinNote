@@ -203,6 +203,7 @@ unsafe fn on_notify(a: &mut App, lp: LPARAM) {
             InvalidateRect(a.status, null(), 0);
             spell::schedule();
             assist::brace_highlight(a.sci);
+            assist::smart_highlight(a.sci);
         }
         2009 => macros::on_record(*(hdr.add(72) as *const i32) as u32, *(hdr.add(80) as *const usize), *(hdr.add(88) as *const isize)),
         2001 => {

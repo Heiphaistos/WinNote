@@ -50,6 +50,47 @@ pub fn brace_highlight(s: HWND) {
     }
 }
 
+const SMART: usize = 10;
+
+/// Surligne dans tout le document les occurrences du mot sélectionné (comme « Smart highlighting » de Notepad++).
+pub fn smart_highlight(s: HWND) {
+    let len = send(s, sci::GETLENGTH, 0, 0);
+    send(s, sci::SETINDICCURRENT, SMART, 0);
+    send(s, sci::INDICCLEAR, 0, len);
+    if !crate::prefs::smart() {
+        return;
+    }
+    let (a, b) = (send(s, 2143, 0, 0), send(s, 2145, 0, 0)); // début / fin de sélection
+    if b - a < 2 || b - a > 100 || send(s, 2570, 0, 0) > 1 {
+        return;
+    }
+    let mut buf = vec![0u8; (b - a) as usize + 2];
+    send(s, sci::GETSELTEXT, 0, buf.as_mut_ptr() as isize);
+    buf.truncate((b - a) as usize);
+    if buf.iter().any(|c| !(c.is_ascii_alphanumeric() || *c == b'_' || *c >= 0x80)) {
+        return; // seulement un mot
+    }
+    send(s, sci::INDICSETSTYLE, SMART, 8);
+    send(s, sci::INDICSETFORE, SMART, 0x40A0E0);
+    send(s, sci::INDICSETALPHA, SMART, 60);
+    send(s, sci::INDICSETOUTLINEALPHA, SMART, 120);
+    send(s, 2198, 2 | 4, 0); // SETSEARCHFLAGS : mot entier, casse
+    let mut from = 0isize;
+    for _ in 0..3000 {
+        send(s, 2190, from as usize, 0);
+        send(s, 2192, len as usize, 0);
+        let f = send(s, 2197, buf.len(), buf.as_ptr() as isize);
+        if f < 0 {
+            break;
+        }
+        let e = send(s, 2193, 0, 0);
+        if f != a {
+            send(s, sci::INDICFILL, f as usize, e - f);
+        }
+        from = e.max(f + 1);
+    }
+}
+
 /// À appeler sur SCN_CHARADDED. `code` = langage de programmation (guillemets et accents graves fermés seulement dans le code), `text_only` = texte brut (rien).
 pub fn on_char(s: HWND, ch: u8, code: bool, text_only: bool) {
     if text_only || send(s, 2570, 0, 0) > 1 {

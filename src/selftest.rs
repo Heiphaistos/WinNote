@@ -122,6 +122,11 @@ pub fn run(log_path: &str) -> i32 {
     t.check("commenter (Rust)", &get(), "// x\n  // y");
     cmds::on_command(TOGGLECOMMENT);
     t.check("décommenter (Rust)", &get(), "x\n  y");
+    set("x = 1");
+    cmds::on_command(BLOCKCOMM);
+    t.check("commentaire de bloc", &get(), "/* x = 1 */");
+    cmds::on_command(BLOCKCOMM);
+    t.check("retrait du commentaire de bloc", &get(), "x = 1");
     lang("Python");
     set("a = 1");
     cmds::on_command(TOGGLECOMMENT);
@@ -149,7 +154,7 @@ pub fn run(log_path: &str) -> i32 {
     cmds::on_command(BOOKPREV);
     t.check("signet précédent", &caret_line().to_string(), "2");
     cmds::on_command(BOOKCLEAR);
-    t.check("effacer les signets", &send(a.sci, sci::MARKERGET, 2, 0).to_string(), "0");
+    t.check("effacer les signets", &(send(a.sci, sci::MARKERGET, 2, 0) & 2).to_string(), "0");
 
     // ----- repli -----
     lang("Rust");
@@ -469,6 +474,11 @@ autre").unwrap();
     cmds::on_command(SHOWEOL);
     t.check("fins de ligne visibles", &send(a.sci, 2355, 0, 0).to_string(), "1");
     cmds::on_command(SHOWEOL);
+    set("foo bar foo baz foo");
+    send(a.sci, sci::SETSEL, 0, 3);
+    crate::assist::smart_highlight(a.sci);
+    t.check("occurrences surlignées (hors sélection)", &format!("{}{}{}", send(a.sci, 2507, 10, 0), send(a.sci, 2507, 10, 8), send(a.sci, 2507, 10, 16)), "011");
+    t.check("historique des modifications actif", &send(a.sci, 2781, 0, 0).to_string(), "3");
 
     // ----- fermer les onglets à droite -----
     let n0 = a.docs.len();

@@ -16,6 +16,8 @@ thread_local! {
     static INDENT: Cell<Indent> = const { Cell::new(Indent::Auto) };
     static VIEW: Cell<(bool, bool)> = const { Cell::new((false, false)) };
     static AUTOCOMP: Cell<bool> = const { Cell::new(true) };
+    static SMART: Cell<bool> = const { Cell::new(true) };
+    static HIST: Cell<bool> = const { Cell::new(true) };
     static DIR: RefCell<PathBuf> = const { RefCell::new(PathBuf::new()) };
 }
 
@@ -23,6 +25,10 @@ pub fn indent() -> Indent { INDENT.with(|c| c.get()) }
 pub fn set_indent(i: Indent) { INDENT.with(|c| c.set(i)); save(); }
 pub fn view() -> (bool, bool) { VIEW.with(|c| c.get()) }
 pub fn set_view(g: bool, e: bool) { VIEW.with(|c| c.set((g, e))); save(); }
+pub fn smart() -> bool { SMART.with(|c| c.get()) }
+pub fn set_smart(b: bool) { SMART.with(|c| c.set(b)); save(); }
+pub fn history() -> bool { HIST.with(|c| c.get()) }
+pub fn set_history(b: bool) { HIST.with(|c| c.set(b)); save(); }
 pub fn autocomp() -> bool { AUTOCOMP.with(|c| c.get()) }
 pub fn set_autocomp(b: bool) { AUTOCOMP.with(|c| c.set(b)); save(); }
 
@@ -33,6 +39,8 @@ pub fn init(dir: PathBuf) {
             match l.split_once('=') {
                 Some(("guides", v)) => VIEW.with(|c| c.set((v == "1", c.get().1))),
                 Some(("eol", v)) => VIEW.with(|c| c.set((c.get().0, v == "1"))),
+                Some(("smart", v)) => SMART.with(|c| c.set(v == "1")),
+                Some(("history", v)) => HIST.with(|c| c.set(v == "1")),
                 Some(("autocomp", v)) => AUTOCOMP.with(|c| c.set(v == "1")),
                 Some(("indent", v)) => INDENT.with(|c| c.set(match v {
                     "tabs" => Indent::Tabs,
@@ -52,7 +60,7 @@ fn save() {
     }
     let ind = match indent() { Indent::Auto => "auto".to_string(), Indent::Tabs => "tabs".into(), Indent::Spaces(n) => format!("spaces{n}") };
     let _ = std::fs::create_dir_all(&dir);
-    let _ = std::fs::write(dir.join("prefs.ini"), format!("autocomp={}\nindent={ind}\nguides={}\neol={}\n", autocomp() as u8, view().0 as u8, view().1 as u8));
+    let _ = std::fs::write(dir.join("prefs.ini"), format!("autocomp={}\nindent={ind}\nguides={}\neol={}\nsmart={}\nhistory={}\n", autocomp() as u8, view().0 as u8, view().1 as u8, smart() as u8, history() as u8));
 }
 
 /// Largeur et mode (tabulations ?) par défaut d'un langage.
@@ -86,6 +94,7 @@ pub fn apply_indent(s: HWND, lang: usize) {
     send(s, SETTABINDENTS, 1, 0);
     send(s, 2356, view().1 as usize, 0); // SETVIEWEOL
     send(s, SETBACKSPACEUNINDENTS, 1, 0);
+    send(s, 2780, if history() { 3 } else { 0 }, 0); // SETCHANGEHISTORY : marqueurs de modification
 }
 
 #[cfg(test)]

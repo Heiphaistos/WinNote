@@ -158,6 +158,36 @@ pub fn toggle_comment() {
     });
 }
 
+/// Entoure la sélection (ou la ligne) d'un commentaire de bloc, ou l'enlève s'il y est déjà.
+pub fn block_comment() {
+    let a = app();
+    let s = a.sci;
+    let (o, c) = match LANGS[a.docs[a.cur].lang].lexer {
+        "cpp" | "rust" | "css" | "sql" => ("/*", "*/"),
+        "hypertext" | "xml" | "markdown" => ("<!--", "-->"),
+        _ => {
+            msg_box("Ce langage n'a pas de commentaire de bloc.");
+            return;
+        }
+    };
+    let (mut b, mut e) = (send(s, 2143, 0, 0), send(s, 2145, 0, 0));
+    if b == e {
+        let ln = send(s, sci::LINEFROMPOS, b as usize, 0) as usize;
+        b = send(s, 2167, ln, 0); // début de ligne
+        e = send(s, 2136, ln, 0); // fin de ligne
+        send(s, sci::SETSEL, b as usize, e);
+    }
+    let mut buf = vec![0u8; (e - b) as usize + 2];
+    send(s, sci::GETSELTEXT, 0, buf.as_mut_ptr() as isize);
+    buf.truncate((e - b) as usize);
+    let t = String::from_utf8_lossy(&buf).to_string();
+    let out = match t.trim().strip_prefix(o).and_then(|r| r.strip_suffix(c)) {
+        Some(inner) => inner.trim_matches(' ').to_string(),
+        None => format!("{o} {t} {c}"),
+    };
+    send(s, sci::REPLACESEL, 0, crate::cstr(&out).as_ptr() as isize);
+}
+
 /// Ajoute la prochaine occurrence du texte sélectionné à la sélection (multi-curseurs) ; sans sélection, sélectionne le mot.
 pub fn select_next() {
     let s = app().sci;

@@ -53,6 +53,8 @@ pub fn build() -> Menus {
         sep(f);
         add(f, REVEALFILE, "Afficher dans l'explorateur");
         add(f, COPYPATH, "Copier le chemin");
+        add(f, COPYNAME, "Copier le nom du fichier");
+        add(f, COPYDIR, "Copier le dossier");
         add(f, BROWSER, "Ouvrir dans le navigateur");
         sep(f);
         add(f, CLOSE, "Fermer l'onglet\tCtrl+W");
@@ -112,6 +114,7 @@ pub fn build() -> Menus {
         add(l, TRIM, "Supprimer les espaces en fin de ligne");
         sep(l);
         add(l, TOGGLECOMMENT, "Commenter / décommenter\tCtrl+/");
+        add(l, BLOCKCOMM, "Commenter en bloc");
         add(l, UPPER, "EN MAJUSCULES\tCtrl+Maj+U");
         add(l, LOWER, "en minuscules\tCtrl+U");
         add(l, TITLECASE, "Première Lettre En Majuscule");
@@ -178,6 +181,8 @@ pub fn build() -> Menus {
         add(v, TOPMOST, "Toujours au premier plan");
         add(v, READONLY, "Lecture seule");
         add(v, GUIDES, "Guides d'indentation");
+        add(v, SMARTHL, "Surligner les occurrences du mot");
+        add(v, CHGHIST, "Historique des modifications (marge)");
         add(v, SHOWEOL, "Fins de ligne visibles");
         sep(v);
         add(v, BOOKTOGGLE, "Signet : basculer\tCtrl+F2");

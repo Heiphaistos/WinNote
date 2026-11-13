@@ -82,6 +82,8 @@ pub fn sync_checks() {
                 TOPMOST => a.topmost,
                 AUTOCOMP => prefs::autocomp(),
                 GUIDES => prefs::view().0,
+                SMARTHL => prefs::smart(),
+                CHGHIST => prefs::history(),
                 SHOWEOL => prefs::view().1,
                 FOLLOW => a.docs.get(a.cur).is_some_and(|d| d.follow),
                 x if (INDENT_AUTO..INDENT_AUTO + 5).contains(&x) => x - INDENT_AUTO == match prefs::indent() { prefs::Indent::Auto => 0, prefs::Indent::Spaces(2) => 1, prefs::Indent::Spaces(4) => 2, prefs::Indent::Spaces(8) => 3, _ => 4 },
@@ -392,6 +394,16 @@ pub fn on_command(id: usize) {
                 textops::open_url(&p.to_string_lossy());
             }
         }
+        COPYNAME | COPYDIR => {
+            if let (Some(p), Some(d)) = (a.docs[doc_i].path.clone(), gtk::gdk::Display::default()) {
+                let p = std::path::Path::new(&p);
+                let r = if id == COPYNAME { p.file_name() } else { p.parent().map(|d| d.as_os_str()) };
+                if let Some(r) = r {
+                    gtk::Clipboard::default(&d).map(|c| c.set_text(&r.to_string_lossy()));
+                }
+            }
+        }
+        BLOCKCOMM => crate::textops::block_comment(),
         COPYPATH => {
             if let (Some(p), Some(d)) = (a.docs[doc_i].path.clone(), gtk::gdk::Display::default()) {
                 gtk::Clipboard::default(&d).map(|c| c.set_text(&p));
@@ -448,6 +460,20 @@ pub fn on_command(id: usize) {
             }
         }
         886..=892 => textops::line_op(id - LOP),
+        SMARTHL => {
+            prefs::set_smart(!prefs::smart());
+            for t in &a.docs {
+                crate::assist::smart_highlight(t.sci);
+            }
+            sync_checks();
+        }
+        CHGHIST => {
+            prefs::set_history(!prefs::history());
+            for t in &a.docs {
+                edit::style_view(t.sci, t.lang);
+            }
+            sync_checks();
+        }
         GUIDES | SHOWEOL => {
             let (g, e) = prefs::view();
             prefs::set_view(if id == GUIDES { !g } else { g }, if id == SHOWEOL { !e } else { e });
@@ -656,6 +682,8 @@ fn build_menu(ag: &gtk::AccelGroup) -> gtk::MenuBar {
     f.append(&gtk::SeparatorMenuItem::new());
     add(&f, ag, "Afficher dans le gestionnaire de fichiers", None, REVEALFILE);
     add(&f, ag, "Copier le chemin", None, COPYPATH);
+    add(&f, ag, "Copier le nom du fichier", None, COPYNAME);
+    add(&f, ag, "Copier le dossier", None, COPYDIR);
     f.append(&gtk::SeparatorMenuItem::new());
     add(&f, ag, "Fermer l'onglet", Some("<Primary>w"), CLOSE);
     add(&f, ag, "Fermer les autres onglets", None, CLOSEOTHERS);
@@ -705,6 +733,7 @@ fn build_menu(ag: &gtk::AccelGroup) -> gtk::MenuBar {
     }
     l.append(&gtk::SeparatorMenuItem::new());
     add(&l, ag, "Commenter / décommenter", Some("<Primary>slash"), TOGGLECOMMENT);
+    add(&l, ag, "Commenter en bloc", None, BLOCKCOMM);
     add(&l, ag, "EN MAJUSCULES", Some("<Primary><Shift>u"), UPPER);
     add(&l, ag, "en minuscules", Some("<Primary>u"), LOWER);
     add(&l, ag, "Première Lettre En Majuscule", None, TITLECASE);
@@ -762,6 +791,8 @@ fn build_menu(ag: &gtk::AccelGroup) -> gtk::MenuBar {
 
     let v = sub(&bar, "Affichage");
     check(&v, ag, "Guides d'indentation", None, GUIDES);
+    check(&v, ag, "Surligner les occurrences du mot", None, SMARTHL);
+    check(&v, ag, "Historique des modifications (marge)", None, CHGHIST);
     check(&v, ag, "Fins de ligne visibles", None, SHOWEOL);
     add(&v, ag, "Zoom avant", Some("<Primary>plus"), ZOOMIN);
     add(&v, ag, "Zoom avant (=)", Some("<Primary>equal"), ZOOMIN);

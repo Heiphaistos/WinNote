@@ -104,8 +104,8 @@ fn style_view(a: &App, s: HWND) {
     send(s, sci::SETMARGINW, 0, w0);
     // marge 1 : signets ; marge 2 : repli
     send(s, sci::SETMARGINTYPE, 1, 0);
-    send(s, sci::SETMARGINMASK, 1, 2);
-    send(s, sci::SETMARGINW, 1, if a.lines || a.fold { sc(14) } else { 0 });
+    send(s, sci::SETMARGINMASK, 1, 2 | 0x01E0_0000); // signets + historique des modifications (marqueurs 21-24)
+    send(s, sci::SETMARGINW, 1, if a.lines || a.fold || crate::prefs::history() { sc(14) } else { 0 });
     send(s, sci::MARKERDEFINE, 1, 0); // cercle
     send(s, sci::MARKERSETFORE, 1, t.accent as isize);
     send(s, sci::MARKERSETBACK, 1, t.accent as isize);
@@ -215,6 +215,8 @@ pub fn refresh() {
             chk(ZEN, a.zen);
             chk(TOPMOST, a.topmost);
             chk(GUIDES, crate::prefs::view().0);
+            chk(SMARTHL, crate::prefs::smart());
+            chk(CHGHIST, crate::prefs::history());
             chk(SHOWEOL, crate::prefs::view().1);
             chk(AUTOCOMP, crate::prefs::autocomp());
             let ind = match crate::prefs::indent() { crate::prefs::Indent::Auto => 0, crate::prefs::Indent::Spaces(2) => 1, crate::prefs::Indent::Spaces(4) => 2, crate::prefs::Indent::Spaces(8) => 3, _ => 4 };
@@ -757,6 +759,16 @@ pub fn on_command(id: usize) {
                 copy_text(&p);
             }
         }
+        COPYNAME | COPYDIR => {
+            if let Some(p) = a.docs[a.cur].path.clone() {
+                let p = std::path::Path::new(&p);
+                let r = if id == COPYNAME { p.file_name() } else { p.parent().map(|d| d.as_os_str()) };
+                if let Some(r) = r {
+                    copy_text(&r.to_string_lossy());
+                }
+            }
+        }
+        BLOCKCOMM => textops::block_comment(),
         BROWSER => {
             if let Some(p) = a.docs[a.cur].path.clone() {
                 shell_open(&p);
@@ -796,6 +808,15 @@ pub fn on_command(id: usize) {
         GUIDES | SHOWEOL => {
             let (g, e) = crate::prefs::view();
             crate::prefs::set_view(if id == GUIDES { !g } else { g }, if id == SHOWEOL { !e } else { e });
+            style_editor(a);
+        }
+        SMARTHL => {
+            crate::prefs::set_smart(!crate::prefs::smart());
+            crate::assist::smart_highlight(a.sci);
+            refresh();
+        }
+        CHGHIST => {
+            crate::prefs::set_history(!crate::prefs::history());
             style_editor(a);
         }
         TRIM => textops::trim(),

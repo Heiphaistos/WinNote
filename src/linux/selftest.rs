@@ -88,6 +88,11 @@ pub fn run(log_path: &str) -> i32 {
     t.check("commenter (Rust)", &get(), "// x\n  // y");
     on_command(TOGGLECOMMENT);
     t.check("décommenter (Rust)", &get(), "x\n  y");
+    set("x = 1");
+    on_command(BLOCKCOMM);
+    t.check("commentaire de bloc", &get(), "/* x = 1 */");
+    on_command(BLOCKCOMM);
+    t.check("retrait du commentaire de bloc", &get(), "x = 1");
     lang("Texte brut");
     set("foo bar foo baz foo");
     send(a.sci, sci::SETSEL, 0, 3);
@@ -230,6 +235,11 @@ pub fn run(log_path: &str) -> i32 {
     on_command(GUIDES);
     t.check("guides d'indentation activés", &send(a.sci, 2133, 0, 0).to_string(), "3");
     on_command(GUIDES);
+    set("foo bar foo baz foo");
+    send(a.sci, sci::SETSEL, 0, 3);
+    crate::assist::smart_highlight(a.sci);
+    t.check("occurrences surlignées (hors sélection)", &format!("{}{}{}", send(a.sci, 2507, 10, 0), send(a.sci, 2507, 10, 8), send(a.sci, 2507, 10, 16)), "011");
+    t.check("historique des modifications actif", &send(a.sci, 2781, 0, 0).to_string(), "3");
     // liens [[note]]
     set("voir [[note-x]] ici");
     send(a.sci, sci::SETSEL, 8, 8);
