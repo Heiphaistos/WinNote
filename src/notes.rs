@@ -68,8 +68,72 @@ pub fn backlinks(path: &str, root: Option<&str>) -> Vec<(String, usize, String)>
     out
 }
 
+/// Étiquettes #tag d'une ligne (pas les titres « # titre » ; lettres, chiffres, _ - /, au moins une lettre).
+pub fn line_tags(l: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut prev = ' ';
+    let mut it = l.char_indices().peekable();
+    while let Some((i, c)) = it.next() {
+        if c == '#' && (prev.is_whitespace() || prev == '(') {
+            let t: String = l[i + 1..].chars().take_while(|x| x.is_alphanumeric() || matches!(x, '_' | '-' | '/')).collect();
+            if t.chars().any(|x| x.is_alphabetic()) {
+                out.push(t);
+            }
+        }
+        prev = c;
+    }
+    out
+}
+
+/// Toutes les étiquettes des notes du dossier : (tag, chemin, ligne, texte). Ignore les blocs de code.
+pub fn tag_hits(root: &str) -> Vec<(String, String, usize, String)> {
+    let mut files = Vec::new();
+    walk(Path::new(root), &mut files, 0);
+    let mut out = Vec::new();
+    for f in files {
+        let ext = f.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
+        if !matches!(ext.as_str(), "md" | "markdown" | "mdx" | "txt") {
+            continue;
+        }
+        let Ok(text) = std::fs::read_to_string(&f) else { continue };
+        let mut fence = false;
+        for (i, l) in text.lines().enumerate() {
+            if l.trim_start().starts_with("```") {
+                fence = !fence;
+            }
+            if fence {
+                continue;
+            }
+            for t in line_tags(l) {
+                out.push((t, f.to_string_lossy().to_string(), i, l.trim().chars().take(70).collect()));
+            }
+        }
+    }
+    out.sort_by(|a, b| a.0.to_lowercase().cmp(&b.0.to_lowercase()).then(a.1.cmp(&b.1)).then(a.2.cmp(&b.2)));
+    out
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn tag_hits_dir() {
+        let d = std::env::temp_dir().join("wn_tags_test");
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        std::fs::write(d.join("a.md"), "# T
+voir #zeta et #alpha
+```
+#code
+```
+").unwrap();
+        let h = super::tag_hits(d.to_str().unwrap());
+        assert_eq!(h.iter().map(|x| x.0.as_str()).collect::<Vec<_>>(), vec!["alpha", "zeta"]);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+    #[test]
+    fn tags() {
+        assert_eq!(super::line_tags("# Titre #projet/a (#b-2) x#no #123 #é"), vec!["projet/a", "b-2", "é"]);
+    }
     #[test]
     fn outline_md_and_code() {
         let o = super::outline("# A\n```\n# no\n```\n## B", true);

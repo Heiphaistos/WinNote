@@ -14,7 +14,7 @@ use windows_sys::Win32::{
 };
 
 #[derive(Clone, Copy, PartialEq)]
-pub enum Mode { Commands, Quick, Goto, InFiles, Input }
+pub enum Mode { Commands, Quick, Goto, InFiles, Input, Tags }
 
 #[derive(Clone)]
 enum Act { Input(String), Cmd(usize), Open(String), Tab(usize), Goto(isize), GotoIn(String, isize) }
@@ -92,6 +92,19 @@ fn collect(mode: Mode) -> Vec<Item> {
             }
             v
         }
+        Mode::Tags => match &a.root {
+            Some(r) => {
+                let v: Vec<Item> = crate::notes::tag_hits(r)
+                    .into_iter()
+                    .map(|(t, f, l, x)| {
+                        let rel = f.strip_prefix(r.as_str()).unwrap_or(&f).trim_start_matches(['\\', '/']).to_string();
+                        Item { label: format!("#{t}  {x}"), hint: format!("{rel}:{}", l + 1), act: Act::GotoIn(f, l as isize) }
+                    })
+                    .collect();
+                if v.is_empty() { vec![Item { label: "Aucune étiquette #tag dans ce dossier".into(), hint: String::new(), act: Act::Goto(-1) }] } else { v }
+            }
+            None => vec![Item { label: "Ouvrez d'abord un dossier (Fichier > Ouvrir un dossier)".into(), hint: String::new(), act: Act::Goto(-1) }],
+        },
         _ => Vec::new(),
     }
 }
@@ -272,6 +285,7 @@ fn paint(dc: HDC, rc: &RECT) {
             Mode::Quick => "Ouvrir un fichier (onglets, récents, dossier)...".into(),
             Mode::Goto => "Numéro de ligne...".into(),
             Mode::InFiles => "Texte à chercher dans le dossier, puis Entrée...".into(),
+            Mode::Tags => "Étiquette à chercher (#projet)...".into(),
             Mode::Input => INPUT.as_ref().map(|i| i.0.clone()).unwrap_or_default(),
         };
         let mut hr = RECT { left: scale(20), top: 0, right: rc.right - scale(20), bottom: head_h() };

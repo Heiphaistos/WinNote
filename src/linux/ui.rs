@@ -154,6 +154,7 @@ enum Act {
     Cmd(usize),
     Open(String),
     Tab(usize),
+    OpenAt(String, usize),
 }
 
 /// Commandes disponibles dans la version Linux (le reste de la table est propre à Windows).
@@ -241,6 +242,10 @@ fn palette(items: Vec<(String, String, Act)>, title: &str) {
         Some(Act::Cmd(id)) => on_command(id),
         Some(Act::Open(p)) => edit::open_path(&p),
         Some(Act::Tab(i)) => edit::switch_to(i),
+        Some(Act::OpenAt(p, l)) => {
+            edit::open_path(&p);
+            send(app().sci, sci::GOTOLINE, l, 0);
+        }
         None => {}
     }
 }
@@ -404,6 +409,14 @@ pub fn on_command(id: usize) {
             }
         }
         BLOCKCOMM => crate::textops::block_comment(),
+        TAGS => {
+            let Some(r) = a.root.clone() else { return };
+            let v = notes::tag_hits(&r)
+                .into_iter()
+                .map(|(t, f, l, x)| (format!("#{t}  {x}"), format!("{}:{}", f.strip_prefix(r.as_str()).unwrap_or(&f).trim_start_matches('/'), l + 1), Act::OpenAt(f, l)))
+                .collect();
+            palette(v, "Étiquettes #tag");
+        }
         PINTAB => {
             let p = !a.docs[doc_i].pinned;
             a.docs[doc_i].pinned = p;
@@ -696,6 +709,7 @@ fn build_menu(ag: &gtk::AccelGroup) -> gtk::MenuBar {
     add(&f, ag, "Copier le dossier", None, COPYDIR);
     f.append(&gtk::SeparatorMenuItem::new());
     add(&f, ag, "Fermer l'onglet", Some("<Primary>w"), CLOSE);
+    add(&f, ag, "Étiquettes #tag du dossier...", None, TAGS);
     add(&f, ag, "Épingler / désépingler l'onglet", None, PINTAB);
     add(&f, ag, "Fermer les autres onglets", None, CLOSEOTHERS);
     add(&f, ag, "Fermer les onglets à gauche", None, CLOSELEFT);

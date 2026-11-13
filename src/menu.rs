@@ -58,6 +58,7 @@ pub fn build() -> Menus {
         add(f, BROWSER, "Ouvrir dans le navigateur");
         sep(f);
         add(f, CLOSE, "Fermer l'onglet\tCtrl+W");
+        add(f, TAGS, "Étiquettes #tag du dossier...");
         add(f, PINTAB, "Épingler / désépingler l'onglet");
         add(f, CLOSEOTHERS, "Fermer les autres onglets");
         add(f, CLOSELEFT, "Fermer les onglets à gauche");

@@ -793,6 +793,7 @@ pub fn on_command(id: usize) {
         FINDNEXT => crate::findbar::find_next(true),
         FINDPREV => crate::findbar::find_next(false),
         FINDINFILES => palette::open(Mode::InFiles),
+        TAGS => palette::open(Mode::Tags),
         GOTO => palette::open(Mode::Goto),
         PALETTE => palette::open(Mode::Commands),
         QUICKOPEN => palette::open(Mode::Quick),
