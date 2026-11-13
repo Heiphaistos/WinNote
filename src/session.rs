@@ -84,7 +84,7 @@ pub fn restore(a: &mut App) -> bool {
                         None => continue,
                     }
                 } else {
-                    std::fs::read(d.join(backup)).unwrap_or_default()
+                    if crate::fileops::plain_name(backup) { std::fs::read(d.join(backup)).unwrap_or_default() } else { continue }
                 };
                 let dirty = *dirty == "1";
                 crate::cmds::push_doc_full(a, path, Some((text, enc)), dirty, untitled.parse().unwrap_or(0));

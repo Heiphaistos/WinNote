@@ -391,7 +391,7 @@ pub fn open_path(p: &str) {
         switch_to(i);
         return;
     }
-    match std::fs::read(p) {
+    match crate::fileops::check_openable(p).and_then(|_| std::fs::read(p).map_err(|e| e.to_string())) {
         Ok(b) => {
             let (t, e) = doc::decode(&b);
             let reuse = a.docs.len() == 1 && a.docs[0].path.is_none() && !a.docs[0].dirty && send(a.docs[0].sci, sci::GETLENGTH, 0, 0) == 0;
@@ -436,7 +436,7 @@ pub fn save_doc(i: usize, as_new: bool) -> bool {
         return false;
     }
     let bytes = doc::encode(&text, a.docs[i].enc);
-    if let Err(e) = std::fs::write(&path, bytes) {
+    if let Err(e) = crate::fileops::write_atomic(&path, &bytes) {
         msg_box(&format!("Échec de l'enregistrement : {e}"));
         return false;
     }
@@ -487,7 +487,7 @@ pub fn reload_with(enc: Option<Enc>) {
 fn reload_at(i: usize, enc: Option<Enc>) {
     let a = app();
     let Some(p) = a.docs.get(i).and_then(|d| d.path.clone()) else { return };
-    match std::fs::read(&p) {
+    match crate::fileops::check_openable(&p).and_then(|_| std::fs::read(&p).map_err(|e| e.to_string())) {
         Ok(b) => {
             let (t, e) = match enc {
                 Some(x) => (doc::decode_as(&b, x), x),
@@ -655,7 +655,7 @@ pub fn restore_session() -> bool {
                         None => continue,
                     }
                 } else {
-                    std::fs::read(d.join(backup)).unwrap_or_default()
+                    if crate::fileops::plain_name(backup) { std::fs::read(d.join(backup)).unwrap_or_default() } else { continue }
                 };
                 new_tab(path, Some((text, enc)), *dirty == "1", untitled.parse().unwrap_or(0));
                 n += 1;

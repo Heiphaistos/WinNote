@@ -406,7 +406,7 @@ pub fn open_path(p: &str) {
         switch_to(a, i);
         return;
     }
-    match std::fs::read(p) {
+    match crate::fileops::check_openable(p).and_then(|_| std::fs::read(p).map_err(|e| e.to_string())) {
         Ok(b) => {
             let (t, e) = doc::decode(&b);
             let reuse = a.docs.len() == 1 && a.docs[0].path.is_none() && !a.docs[0].dirty && send(a.sci, sci::GETLENGTH, 0, 0) == 0;
@@ -585,7 +585,7 @@ pub fn save_doc(a: &mut App, i: usize, as_new: bool) -> bool {
         return false;
     }
     let bytes = doc::encode(&text, a.docs[i].enc);
-    if let Err(e) = std::fs::write(&path, bytes) {
+    if let Err(e) = crate::fileops::write_atomic(&path, &bytes) {
         msg_box(&format!("Échec de l'enregistrement : {e}"));
         return false;
     }
@@ -619,7 +619,7 @@ fn reload_with(a: &mut App, enc: Option<Enc>) {
     if enc.is_some() && a.docs[a.cur].dirty && unsafe { MessageBoxW(a.hwnd, w("Les modifications non enregistrées seront perdues. Recharger ?").as_ptr(), w("WinNote").as_ptr(), MB_YESNO | MB_ICONQUESTION) } != IDYES {
         return;
     }
-    match std::fs::read(&p) {
+    match crate::fileops::check_openable(&p).and_then(|_| std::fs::read(&p).map_err(|e| e.to_string())) {
         Ok(b) => {
             let (t, e) = match enc {
                 Some(x) => (doc::decode_as(&b, x), x),
@@ -778,7 +778,11 @@ pub fn on_command(id: usize) {
         }
         BROWSER => {
             if let Some(p) = a.docs[a.cur].path.clone() {
-                shell_open(&p);
+                if crate::textops::browser_safe(&p) {
+                    shell_open(&p);
+                } else {
+                    msg_box("Seuls les fichiers web (html, svg, pdf, txt, md...) s'ouvrent dans le navigateur.");
+                }
             }
         }
         UNDO => drop(send(s, sci::UNDO, 0, 0)),

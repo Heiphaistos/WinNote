@@ -57,7 +57,7 @@ pub fn favs() -> Vec<String> {
 pub fn write_copy(path: &str) -> Result<(), String> {
     let a = app();
     let text = cmds::text_of_doc(a, a.cur);
-    std::fs::write(path, doc::encode(&text, a.docs[a.cur].enc)).map_err(|e| extras::io_err("Copie impossible à écrire", std::path::Path::new(path), &e))
+    crate::fileops::write_atomic(path, &doc::encode(&text, a.docs[a.cur].enc)).map_err(|e| extras::io_err("Copie impossible à écrire", std::path::Path::new(path), &e))
 }
 
 /// « Enregistrer une copie... » : boîte d'enregistrement, puis écriture sans changer d'onglet.
