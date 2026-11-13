@@ -1,6 +1,11 @@
 //! Logique « notes » partagée Windows / Linux : plan du document, liens entrants [[note]], parcours de dossier.
 use std::path::{Path, PathBuf};
 
+/// Lit un fichier texte d'au plus 4 Mio (les liens entrants / étiquettes parcourent des milliers de fichiers : pas de journal géant en mémoire).
+pub fn read_small(p: &Path) -> Option<String> {
+    (std::fs::metadata(p).ok()?.len() <= 4 << 20).then(|| std::fs::read_to_string(p).ok()).flatten()
+}
+
 pub fn walk(root: &Path, out: &mut Vec<PathBuf>, depth: u32) {
     if depth > 6 || out.len() > 5000 {
         return;
@@ -9,11 +14,13 @@ pub fn walk(root: &Path, out: &mut Vec<PathBuf>, depth: u32) {
     for e in rd.flatten() {
         let p = e.path();
         let name = e.file_name().to_string_lossy().to_string();
-        if p.is_dir() {
+        // file_type() ne suit pas les liens : ni jonction bouclante, ni tube / périphérique dont la lecture bloquerait
+        let Ok(ft) = e.file_type() else { continue };
+        if ft.is_dir() {
             if !matches!(name.as_str(), ".git" | "node_modules" | "target" | ".logs" | "dist" | "build") {
                 walk(&p, out, depth + 1);
             }
-        } else {
+        } else if ft.is_file() {
             out.push(p);
         }
     }
@@ -57,7 +64,7 @@ pub fn backlinks(path: &str, root: Option<&str>) -> Vec<(String, usize, String)>
         if !matches!(ext.as_str(), "md" | "markdown" | "mdx" | "txt") || f == p {
             continue;
         }
-        let Ok(text) = std::fs::read_to_string(&f) else { continue };
+        let Some(text) = read_small(&f) else { continue };
         if let Some((i, l)) = text.lines().enumerate().find(|(_, l)| {
             let ll = l.to_lowercase();
             pats.iter().any(|q| ll.contains(q.as_str()))
@@ -95,7 +102,7 @@ pub fn tag_hits(root: &str) -> Vec<(String, String, usize, String)> {
         if !matches!(ext.as_str(), "md" | "markdown" | "mdx" | "txt") {
             continue;
         }
-        let Ok(text) = std::fs::read_to_string(&f) else { continue };
+        let Some(text) = read_small(&f) else { continue };
         let mut fence = false;
         for (i, l) in text.lines().enumerate() {
             if l.trim_start().starts_with("```") {
