@@ -26,6 +26,8 @@ pub mod mdedit;
 pub mod mdstyle;
 #[path = "../mdrender.rs"]
 pub mod mdrender;
+#[path = "../extras.rs"]
+pub mod extras;
 #[path = "../notes.rs"]
 pub mod notes;
 #[path = "../sci.rs"]

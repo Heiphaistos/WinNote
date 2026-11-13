@@ -46,6 +46,8 @@ pub fn build() -> Menus {
         add(f, SAVE, "Enregistrer\tCtrl+S");
         add(f, SAVEAS, "Enregistrer sous...\tCtrl+Maj+S");
         add(f, SAVEALL, "Tout enregistrer\tCtrl+Alt+S");
+        add(f, SAVECOPY, "Enregistrer une copie...");
+        add(f, PAGESETUP, "Mise en page de l'impression...");
         add(f, PRINT, "Imprimer...\tCtrl+P");
         add(f, RELOAD, "Recharger depuis le disque");
         add(f, DAILY, "Note du jour");
@@ -59,6 +61,10 @@ pub fn build() -> Menus {
         sep(f);
         add(f, CLOSE, "Fermer l'onglet\tCtrl+W");
         add(f, TAGS, "Étiquettes #tag du dossier...");
+        add(f, SYMBOLS, "Aller à une fonction / un titre...");
+        add(f, PROPS, "Propriétés YAML du document...");
+        add(f, FAVTOGGLE, "Favoris : ajouter / retirer ce fichier");
+        add(f, FAVS, "Favoris...");
         add(f, PINTAB, "Épingler / désépingler l'onglet");
         add(f, CLOSEOTHERS, "Fermer les autres onglets");
         add(f, CLOSELEFT, "Fermer les onglets à gauche");

@@ -32,6 +32,9 @@ pub fn set_history(b: bool) { HIST.with(|c| c.set(b)); save(); }
 pub fn autocomp() -> bool { AUTOCOMP.with(|c| c.get()) }
 pub fn set_autocomp(b: bool) { AUTOCOMP.with(|c| c.set(b)); save(); }
 
+/// Dossier de réglages (favoris, mise en page, récupération), vide avant `init`.
+pub fn dir() -> PathBuf { DIR.with(|d| d.borrow().clone()) }
+
 /// Lit `prefs.ini` dans `dir` (à appeler au démarrage).
 pub fn init(dir: PathBuf) {
     if let Ok(s) = std::fs::read_to_string(dir.join("prefs.ini")) {

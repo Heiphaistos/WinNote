@@ -54,8 +54,10 @@ unsafe fn run(hdc: HDC, title: &str, output: Option<&str>, pages: Option<(u32, u
     let (pw, ph, dpi) = (cap(HORZRES), cap(VERTRES), cap(LOGPIXELSX).max(72));
     let dpi_y = cap(LOGPIXELSY).max(72);
     let (ox, oy) = (cap(PHYSICALOFFSETX), cap(PHYSICALOFFSETY));
-    // marges d'un pouce (relatives à la zone imprimable)
-    let (ml, mt) = ((dpi - ox).max(0), (dpi_y - oy).max(0));
+    // marges de la mise en page (25 mm par défaut), relatives à la zone imprimable
+    let layout = crate::extras::PrintLayout::load(&crate::prefs::dir());
+    let mm = |d: i32| (layout.margin_mm as i32 * d * 10 / 254).max(0);
+    let (ml, mt) = ((mm(dpi) - ox).max(0), (mm(dpi_y) - oy).max(0));
     let band = dpi_y / 3; // hauteur réservée à l'en-tête / au pied de page
     let rc_page = [0, 0, pw, ph];
     let rc = [ml, mt + band, pw - ml, ph - mt - band];
@@ -88,9 +90,11 @@ unsafe fn run(hdc: HDC, title: &str, output: Option<&str>, pages: Option<(u32, u
             continue;
         }
         StartPage(hdc);
-        text_at(hdc, title, ml, mt, TA_LEFT | TA_TOP);
-        text_at(hdc, &date, pw - ml, mt, TA_RIGHT | TA_TOP);
-        text_at(hdc, &format!("Page {n} / {total}"), pw / 2, ph - mt - band + band / 4, TA_CENTER | TA_TOP);
+        let (hz, fz) = (crate::extras::zones(&layout.header, title, &date, n, total), crate::extras::zones(&layout.footer, title, &date, n, total));
+        for (z, (x, al)) in [(ml, TA_LEFT), (pw / 2, TA_CENTER), (pw - ml, TA_RIGHT)].into_iter().enumerate() {
+            text_at(hdc, &hz[z], x, mt, al | TA_TOP);
+            text_at(hdc, &fz[z], x, ph - mt - band + band / 4, al | TA_TOP);
+        }
         let mut fr = RangeToFormat { hdc: hdc as isize, hdc_target: hdc as isize, rc, rc_page, cp_min: start, cp_max: to };
         send(s, FORMATRANGEFULL, 1, &mut fr as *mut _ as isize);
         EndPage(hdc);

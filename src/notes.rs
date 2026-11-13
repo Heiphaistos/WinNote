@@ -31,7 +31,7 @@ pub fn outline(text: &str, md: bool) -> Vec<(usize, String, usize)> {
         let (level, title) = if md && !in_code && t.starts_with('#') {
             let lv = t.chars().take_while(|&c| c == '#').count();
             (lv, t[lv..].trim().to_string())
-        } else if !md && ["fn ", "pub fn ", "def ", "class ", "function ", "func ", "struct ", "impl ", "enum ", "trait ", "interface ", "async fn ", "pub struct "].iter().any(|k| t.starts_with(k)) {
+        } else if !md && ["fn ", "pub fn ", "def ", "class ", "function ", "func ", "struct ", "impl ", "enum ", "trait ", "interface ", "async fn ", "pub struct ", "pub(crate) fn ", "pub async fn ", "pub enum ", "pub trait ", "export function ", "export class ", "export default function ", "export async function ", "sub ", "module ", "object "].iter().any(|k| t.starts_with(k)) {
             (1 + (l.len() - t.len()) / 4, t.trim_end_matches(['{', ':', ' ']).chars().take(80).collect())
         } else {
             continue;

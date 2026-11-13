@@ -14,6 +14,8 @@ mod mdpreview;
 mod menu;
 mod mdrender;
 mod menubar;
+mod extras;
+mod features;
 mod notes;
 mod palette;
 mod assist;
@@ -251,6 +253,7 @@ unsafe fn on_timer(a: &mut App, id: usize) {
         6 => mdlive::on_timer(),
         7 => cmds::check_external(),
         3 => session::save(a),
+        8 => features::recovery_snapshot(),
         9 => {
             KillTimer(a.hwnd, 9);
             spell::check_visible();
@@ -441,6 +444,7 @@ unsafe extern "system" fn wndproc(h: HWND, m: u32, wp: WPARAM, lp: LPARAM) -> LR
             0
         }
         WM_DESTROY => {
+            features::recovery_end();
             PostQuitMessage(0);
             0
         }
@@ -557,10 +561,14 @@ fn main() {
         if session::restore(a) && a.docs.len() > 1 && a.docs[0].path.is_none() && !a.docs[0].dirty && sci_empty(a, 0) {
             cmds::cmd_close(0);
         }
+        if !args.iter().any(|x| !x.starts_with("--")) {
+            features::recovery_start();
+        }
         for p in args.iter().filter(|x| !x.starts_with("--")) {
             cmds::open_path(p);
         }
         SetTimer(hwnd, 3, 30_000, None);
+        SetTimer(hwnd, 8, 10_000, None);
         SetTimer(hwnd, 7, 1_500, None);
         SetTimer(hwnd, 4, 6 * 3600 * 1000, None);
         SetTimer(hwnd, 5, 8_000, None);

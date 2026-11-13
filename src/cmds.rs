@@ -525,7 +525,7 @@ pub fn text_of_doc(a: &mut App, i: usize) -> Vec<u8> {
     t
 }
 
-fn file_dialog(save: bool, name: &str) -> Vec<String> {
+pub fn file_dialog(save: bool, name: &str) -> Vec<String> {
     let a = app();
     let filter = w("Tous les fichiers (*.*)\0*.*\0Texte (*.txt;*.log)\0*.txt;*.log\0Code\0*.c;*.cpp;*.h;*.rs;*.py;*.js;*.ts;*.cs;*.java;*.go\0Web et données\0*.html;*.htm;*.css;*.json;*.xml;*.md;*.yml;*.toml\0\0");
     let mut buf = vec![0u16; 32768];
@@ -794,6 +794,12 @@ pub fn on_command(id: usize) {
         FINDPREV => crate::findbar::find_next(false),
         FINDINFILES => palette::open(Mode::InFiles),
         TAGS => palette::open(Mode::Tags),
+        PROPS => palette::open(Mode::Props),
+        FAVTOGGLE => crate::features::fav_toggle(),
+        FAVS => palette::open(Mode::Favs),
+        SYMBOLS => palette::open(Mode::Symbols),
+        SAVECOPY => crate::features::save_copy(),
+        PAGESETUP => crate::features::page_setup(),
         GOTO => palette::open(Mode::Goto),
         PALETTE => palette::open(Mode::Commands),
         QUICKOPEN => palette::open(Mode::Quick),

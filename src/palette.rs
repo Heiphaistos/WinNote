@@ -14,10 +14,10 @@ use windows_sys::Win32::{
 };
 
 #[derive(Clone, Copy, PartialEq)]
-pub enum Mode { Commands, Quick, Goto, InFiles, Input, Tags }
+pub enum Mode { Commands, Quick, Goto, InFiles, Input, Tags, Symbols, Favs, Props }
 
 #[derive(Clone)]
-enum Act { Input(String), Cmd(usize), Open(String), Tab(usize), Goto(isize), GotoIn(String, isize) }
+enum Act { Input(String), Cmd(usize), Open(String), Tab(usize), Goto(isize), GotoIn(String, isize), Prop(String) }
 
 struct Item { label: String, hint: String, act: Act }
 
@@ -105,6 +105,18 @@ fn collect(mode: Mode) -> Vec<Item> {
             }
             None => vec![Item { label: "Ouvrez d'abord un dossier (Fichier > Ouvrir un dossier)".into(), hint: String::new(), act: Act::Goto(-1) }],
         },
+        Mode::Symbols => {
+            let a = app();
+            let text = String::from_utf8_lossy(&crate::cmds::text_of_doc(a, a.cur)).into_owned();
+            let md = crate::lang::LANGS[a.docs[a.cur].lang].lexer == "markdown";
+            let v: Vec<Item> = crate::notes::outline(&text, md).into_iter().map(|(lv, t, l)| Item { label: format!("{}{t}", "  ".repeat(lv.saturating_sub(1).min(6))), hint: format!("ligne {}", l + 1), act: Act::Goto(l as isize) }).collect();
+            if v.is_empty() { vec![Item { label: "Aucune fonction ni aucun titre dans ce fichier".into(), hint: String::new(), act: Act::Goto(-1) }] } else { v }
+        }
+        Mode::Favs => {
+            let v: Vec<Item> = crate::features::favs().into_iter().map(|p| Item { label: p.rsplit(['\\', '/']).next().unwrap_or(&p).into(), hint: p.clone(), act: Act::Open(p) }).collect();
+            if v.is_empty() { vec![Item { label: "Aucun favori (Fichier > Favoris : ajouter / retirer le fichier)".into(), hint: String::new(), act: Act::Goto(-1) }] } else { v }
+        }
+        Mode::Props => crate::features::prop_items().into_iter().map(|(label, hint, init)| Item { label, hint, act: Act::Prop(init) }).collect(),
         _ => Vec::new(),
     }
 }
@@ -237,6 +249,7 @@ fn run(i: usize) {
             send(app().sci, sci::GOTOLINE, l as usize, 0);
         }
         Act::Goto(_) => {}
+        Act::Prop(init) => input("Propriété — clé: valeur (valeur vide = retirer)", &init, Box::new(|t| crate::features::set_property(&t))),
         Act::Input(q) => {
             #[allow(static_mut_refs)]
             if let Some((_, f)) = unsafe { INPUT.take() } {
@@ -286,6 +299,9 @@ fn paint(dc: HDC, rc: &RECT) {
             Mode::Goto => "Numéro de ligne...".into(),
             Mode::InFiles => "Texte à chercher dans le dossier, puis Entrée...".into(),
             Mode::Tags => "Étiquette à chercher (#projet)...".into(),
+            Mode::Symbols => "Fonction ou titre à atteindre...".into(),
+            Mode::Favs => "Favori à ouvrir...".into(),
+            Mode::Props => "Propriété YAML à modifier ou à ajouter...".into(),
             Mode::Input => INPUT.as_ref().map(|i| i.0.clone()).unwrap_or_default(),
         };
         let mut hr = RECT { left: scale(20), top: 0, right: rc.right - scale(20), bottom: head_h() };
