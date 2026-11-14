@@ -384,6 +384,18 @@ autre").unwrap();
     cmds::switch_to(a, a.cur - 1);
     t.check("tous les onglets : onglet précédent", &get(), "c");
     findbar::close();
+    // ----- ouverture sûre : dossier / périphérique refusés (sans onglet), enregistrement atomique -----
+    let n_docs = a.docs.len();
+    cmds::open_path(&dir.to_string_lossy());
+    cmds::open_path(r"C:/NUL");
+    t.check_bool("ouvrir un dossier ou un périphérique : aucun onglet créé", a.docs.len() == n_docs);
+    let atom = dir.join("atomique.txt");
+    std::fs::write(&atom, "avant").ok();
+    cmds::open_path(&atom.to_string_lossy());
+    set("après enregistrement");
+    cmds::save_doc(a, a.cur, false);
+    t.check("enregistrement atomique : contenu écrit", &std::fs::read_to_string(&atom).unwrap_or_default(), "après enregistrement");
+    t.check_bool("enregistrement atomique : aucun fichier temporaire", !std::fs::read_dir(&dir).map_or(true, |r| r.flatten().any(|e| e.file_name().to_string_lossy().ends_with(".tmp"))));
     // ----- fichier modifié sur le disque : rechargement automatique + suivi de fin -----
     let ext = dir.join("externe.txt");
     std::fs::write(&ext, "un").ok();

@@ -433,8 +433,16 @@ unsafe extern "system" fn wndproc(h: HWND, m: u32, wp: WPARAM, lp: LPARAM) -> LR
             let hd = wp as HDROP;
             for i in 0..DragQueryFileW(hd, 0xFFFF_FFFF, null_mut(), 0) {
                 let mut buf = vec![0u16; 1024];
-                let n = DragQueryFileW(hd, i, buf.as_mut_ptr(), 1024) as usize;
-                cmds::open_path(&String::from_utf16_lossy(&buf[..n]));
+                let n = (DragQueryFileW(hd, i, buf.as_mut_ptr(), 1024) as usize).min(buf.len());
+                let p = String::from_utf16_lossy(&buf[..n]);
+                if p.is_empty() {
+                    continue;
+                }
+                if std::path::Path::new(&p).is_dir() {
+                    sidebar::set_root(&p); // un dossier glissé devient le dossier de travail (comme Notepad++)
+                } else {
+                    cmds::open_path(&p);
+                }
             }
             DragFinish(hd);
             0

@@ -203,15 +203,18 @@ fn lock_of(dir: &Path, pid: u32) -> PathBuf {
 fn alive(pid: u32) -> bool {
     use windows_sys::Win32::{
         Foundation::{CloseHandle, GetLastError},
-        System::Threading::OpenProcess,
+        System::Threading::{GetExitCodeProcess, OpenProcess},
     };
     unsafe {
         let h = OpenProcess(0x1000, 0, pid); // PROCESS_QUERY_LIMITED_INFORMATION
         if h.is_null() {
             return GetLastError() == 5; // accès refusé : le processus existe (autre session)
         }
+        // Un processus terminé reste « ouvrable » tant qu'un handle traîne quelque part : seul le code de sortie STILL_ACTIVE (259) prouve qu'il tourne.
+        let mut code = 0u32;
+        let running = GetExitCodeProcess(h, &mut code) == 0 || code == 259;
         CloseHandle(h);
-        true
+        running
     }
 }
 #[cfg(target_os = "linux")]
@@ -239,7 +242,7 @@ pub fn recovery_orphans(dir: &Path) -> Vec<u32> {
         out.extend(rd.flatten().filter_map(|e| pid_of(&e.file_name().to_string_lossy(), "running-", ".lock")));
     }
     if let Ok(rd) = std::fs::read_dir(dir.join("recovery")) {
-        out.extend(rd.flatten().filter_map(|e| pid_of(&e.file_name().to_string_lossy(), "", "")));
+        out.extend(rd.flatten().filter_map(|e| pid_of(&e.file_name().to_string_lossy(), "", "").or_else(|| pid_of(&e.file_name().to_string_lossy(), "", ".new"))));
     }
     out.sort_unstable();
     out.dedup();
@@ -252,6 +255,7 @@ pub fn recovery_discard(dir: &Path) {
     for p in recovery_orphans(dir) {
         let _ = std::fs::remove_file(lock_of(dir, p));
         let _ = std::fs::remove_dir_all(rdir(dir, p));
+        let _ = std::fs::remove_dir_all(rdir(dir, p).with_extension("new"));
     }
 }
 
@@ -260,16 +264,20 @@ pub fn recovery_end(dir: &Path) {
     let me = std::process::id();
     let _ = std::fs::remove_file(lock_of(dir, me));
     let _ = std::fs::remove_dir_all(rdir(dir, me));
+    let _ = std::fs::remove_dir_all(rdir(dir, me).with_extension("new"));
     let _ = std::fs::remove_dir(dir.join("recovery")); // seulement s'il est vide
 }
 
 /// Réécrit les copies de secours de cette fenêtre : une par document modifié (nom, chemin, encodage, texte UTF-8).
 pub fn recovery_snapshot(dir: &Path, docs: &[Recovered]) -> Result<(), String> {
-    let d = rdir(dir, std::process::id());
-    let _ = std::fs::remove_dir_all(&d);
+    let live = rdir(dir, std::process::id());
     if docs.is_empty() {
+        let _ = std::fs::remove_dir_all(&live);
         return Ok(());
     }
+    // Écrit dans un dossier voisin puis l'échange : un arrêt brutal pendant l'écriture laisse l'ancienne copie intacte.
+    let d = live.with_file_name(format!("{}.new", std::process::id()));
+    let _ = std::fs::remove_dir_all(&d);
     std::fs::create_dir_all(&d).map_err(|e| io_err("Dossier de copies de secours impossible à créer", &d, &e))?;
     let mut idx = String::new();
     for (i, r) in docs.iter().enumerate() {
@@ -278,7 +286,9 @@ pub fn recovery_snapshot(dir: &Path, docs: &[Recovered]) -> Result<(), String> {
         idx.push_str(&format!("{i}\t{}\t{}\t{}\n", r.enc, r.path.clone().unwrap_or_default(), r.name.replace(['\t', '\n'], " ")));
     }
     let f = d.join("index.txt");
-    std::fs::write(&f, idx).map_err(|e| io_err("Index des copies de secours impossible à écrire", &f, &e))
+    std::fs::write(&f, idx).map_err(|e| io_err("Index des copies de secours impossible à écrire", &f, &e))?;
+    let _ = std::fs::remove_dir_all(&live);
+    std::fs::rename(&d, &live).map_err(|e| io_err("Copies de secours impossibles à mettre en place", &live, &e))
 }
 
 /// Copies de secours des fenêtres disparues dont le texte n'est dans aucun document ouvert : à rouvrir comme documents modifiés.
@@ -400,6 +410,10 @@ mod tests {
         ];
         recovery_snapshot(&d, &docs).unwrap();
         assert!(recovery_pending(&d, &[]).is_empty(), "nos copies ne sont pas reprises par nous");
+        assert!(!rdir(&d, std::process::id()).with_extension("new").exists(), "le dossier d'écriture est échangé, pas laissé");
+        recovery_snapshot(&d, &docs[..1]).unwrap();
+        assert_eq!(std::fs::read_dir(rdir(&d, std::process::id())).unwrap().count(), 2, "0.txt + index.txt après réécriture");
+        recovery_snapshot(&d, &docs).unwrap();
         // Une autre fenêtre morte (pid inexistant) laisse verrou + copies : reprises ; une autre fenêtre vivante (le parent de test n'est pas fiable) : simulée par un pid vivant.
         let dead = 4_294_967_000u32;
         std::fs::write(lock_of(&d, dead), dead.to_string()).unwrap();
@@ -443,6 +457,34 @@ mod tests {
         assert_eq!(recovery_orphans(&d), vec![cp], "morte sans sortie normale : reprise possible");
         assert_eq!(recovery_pending(&d, &[])[0].text, b"autre fenetre".to_vec());
         std::fs::remove_dir_all(&d).ok();
+    }
+
+    /// Entrées hostiles pseudo-aléatoires (UTF-8 multi-octets, marqueurs YAML / Markdown, BOM) : aucune ne doit paniquer (panic = abort en release).
+    #[test]
+    fn hostile_inputs_never_panic() {
+        let alphabet = ["---", "\n", "\r\n", ":", " ", "- ", "#", "é", "日", "\u{feff}", "\"", "'", "[[", "]]", "](", "**", "`", "|", "\t", "...", "x", "\u{1f600}"];
+        let mut seed = 0x2545F491u64;
+        for _ in 0..3000 {
+            let mut s = String::new();
+            for _ in 0..(seed % 40) {
+                seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                s.push_str(alphabet[(seed >> 33) as usize % alphabet.len()]);
+            }
+            let _ = props(&s);
+            let _ = set_prop(&s, "k", "v: w");
+            let _ = set_prop(&s, "k", "");
+            let _ = crate::mdrender::render(&s);
+            let _ = crate::mdrender::live(&s);
+            let cut = |i: usize| (0..=i).rev().find(|&k| s.is_char_boundary(k)).unwrap_or(0);
+            let (a, b) = (&s[..cut(s.len() / 2)], &s[cut(s.len() / 3)..]);
+            let (x, y, z) = diff_range(a, b);
+            assert_eq!(format!("{}{}{}", &a[..x], z, &a[y..]), b);
+            let _ = PrintLayout::parse(&s);
+            let _ = zones(&s, "f", "d", 1, 2);
+            let raw: Vec<u8> = s.bytes().map(|c| c.wrapping_mul(seed as u8 | 1)).collect();
+            let (t, _) = crate::doc::decode(&raw);
+            let _ = crate::doc::encode(&t, crate::doc::Enc::Ansi);
+        }
     }
 
     #[test]
