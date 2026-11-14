@@ -119,6 +119,16 @@ pub fn run(log_path: &str) -> i32 {
     a.find.regex.set_active(true);
     find::replace_all();
     t.check("regex avec groupe de capture", &get(), "a<1> b<22>");
+    set("a\nb");
+    a.find.find.set_text("$");
+    a.find.repl.set_text(";");
+    find::replace_all();
+    t.check("regex : $ sur chaque ligne (pas de boucle sans fin)", &get(), "a;\nb;");
+    set("a\nb");
+    a.find.find.set_text("^");
+    a.find.repl.set_text("- ");
+    find::replace_all();
+    t.check("regex : ^ sur chaque ligne", &get(), "- a\n- b");
     a.find.regex.set_active(false);
     set("aAa");
     a.find.find.set_text("a");
@@ -420,9 +430,14 @@ fn b() {
     let r = crate::print::export_pdf(&pdf);
     t.check("impression PDF : plusieurs pages", &r.as_ref().map_or(false, |&n| n >= 5).to_string(), "true");
     t.check("impression PDF : fichier valide", &std::fs::read(&pdf).map_or(false, |b| b.starts_with(b"%PDF")).to_string(), "true");
-    // ---- mise à jour : API simulée (file://), empreinte, remplacement
+    // ---- mise à jour : API simulée (file://), empreinte, signature épinglée, remplacement (build test-hooks seulement)
+    #[cfg(feature = "test-hooks")]
     {
         use crate::update;
+        use ed25519_compact::{KeyPair, Seed};
+        let kp = KeyPair::from_seed(Seed::new([9; 32]));
+        let pubhex: String = kp.pk.iter().map(|b| format!("{b:02x}")).collect();
+        std::env::set_var("WINNOTE_UPDATE_PUBKEY", &pubhex);
         let app_new = dir.join("nouvelle.AppImage");
         std::fs::write(&app_new, b"#!/bin/sh
 echo v9
@@ -431,13 +446,16 @@ echo v9
         let api = format!("{{\"tag_name\":\"v9.9.9\",\"assets\":[{{\"name\":\"WinNote-9.9.9-x86_64.AppImage\",\"digest\":\"sha256:{sha}\",\"browser_download_url\":\"file://{}\"}}]}}", app_new.display());
         let api_path = dir.join("api.json");
         std::fs::write(&api_path, api).ok();
+        let sig_path = dir.join("nouvelle.AppImage.sig");
+        let sign = |k: &KeyPair| std::fs::write(&sig_path, k.sk.sign(crate::vers::signed_msg("v9.9.9", "nouvelle.AppImage", &sha), None).as_ref()).ok();
+        sign(&kp);
         std::env::set_var("WINNOTE_UPDATE_URL", format!("file://{}", api_path.display()));
         let found = update::fetch();
         t.check("mise à jour : nouvelle version détectée", &found.as_ref().map_or("erreur".into(), |f| f.as_ref().map_or("aucune".into(), |f| f.version.clone())), "v9.9.9");
         let target = dir.join("WinNote.AppImage");
         std::fs::write(&target, b"ancienne").ok();
         if let Ok(Some(f)) = &found {
-            t.check("mise à jour : installation", &update::install(f, &target.to_string_lossy()).is_ok().to_string(), "true");
+            t.check("mise à jour : installation (signature valide)", &update::install(f, &target.to_string_lossy()).is_ok().to_string(), "true");
             t.check("mise à jour : fichier remplacé", &std::fs::read_to_string(&target).unwrap_or_default(), "#!/bin/sh
 echo v9
 ");
@@ -445,8 +463,15 @@ echo v9
             std::fs::write(&target, b"ancienne").ok();
             t.check("mise à jour : mauvaise empreinte refusée", &update::install(&bad, &target.to_string_lossy()).is_err().to_string(), "true");
             t.check("mise à jour : ancien fichier intact", &std::fs::read_to_string(&target).unwrap_or_default(), "ancienne");
+            sign(&KeyPair::from_seed(Seed::new([10; 32])));
+            t.check("mise à jour : signature d'une autre clé refusée", &update::install(f, &target.to_string_lossy()).is_err().to_string(), "true");
+            t.check("mise à jour : fichier intact après signature fausse", &std::fs::read_to_string(&target).unwrap_or_default(), "ancienne");
+            std::fs::remove_file(&sig_path).ok();
+            t.check("mise à jour : signature absente refusée", &update::install(f, &target.to_string_lossy()).is_err().to_string(), "true");
+            t.check("mise à jour : fichier intact sans signature", &std::fs::read_to_string(&target).unwrap_or_default(), "ancienne");
         }
         std::env::remove_var("WINNOTE_UPDATE_URL");
+        std::env::remove_var("WINNOTE_UPDATE_PUBKEY");
     }
     // Markdown en direct
     lang("Markdown");

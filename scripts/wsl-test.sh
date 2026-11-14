@@ -4,7 +4,7 @@ set -e
 "$(dirname "$0")/wsl-sync.sh"
 cd ~/wnbuild
 . ~/.cargo/env
-cargo build --release --features gtk-ui --bin winnote-gtk 2>&1 | grep -E "^(error|warning)" -A8 | head -80 || true
+cargo build --release --features gtk-ui,test-hooks --bin winnote-gtk 2>&1 | grep -E "^(error|warning)" -A8 | head -80 || true
 (Xvfb :77 -screen 0 1280x800x24 >/dev/null 2>&1 &) ; sleep 1
 export DISPLAY=:77 GDK_BACKEND=x11 HOME=$(mktemp -d)
 rc=0

@@ -191,6 +191,37 @@ pub fn run(log_path: &str) -> i32 {
     t.log.push(format!("debug regex {}", findbar::debug_state()));
     findbar::replace_all();
     t.check("regex avec groupe de capture", &get(), "a<1> b<22>");
+    // regex : ancre de début de ligne sur plusieurs lignes, insensible à la casse, motif invalide sans effet
+    let regex_all = |find: &str, repl: &str, text: &str, case: bool| -> String {
+        let a = app();
+        set(text);
+        a.f_case = case;
+        a.f_regex = true;
+        unsafe {
+            SetWindowTextW(a.find_edit, w(find).as_ptr());
+            SetWindowTextW(a.repl_edit, w(repl).as_ptr());
+        }
+        findbar::replace_all();
+        get()
+    };
+    t.check("regex : ^ sur chaque ligne", &regex_all("^", "- ", "a\nb\nc", false), "- a\n- b\n- c");
+    t.check("regex : $ sur chaque ligne", &regex_all("$", ";", "a\nb", false), "a;\nb;");
+    t.check("regex : insensible à la casse + alternance", &regex_all("(abc|XYZ)", "[\\1]", "ABC xyz Abc", false), "[ABC] [xyz] [Abc]");
+    t.check("regex : sensible à la casse", &regex_all("abc", "_", "ABC abc", true), "ABC _");
+    t.check("regex : motif invalide ne modifie pas le texte", &regex_all("(abc", "_", "abc (abc", false), "abc (abc");
+    t.check("regex : classe et quantificateur", &regex_all("[0-9]{2,}", "#", "1 22 333", false), "1 # #");
+    app().f_case = false;
+    // multi-curseurs : tout sélectionner puis saisir ; Retour arrière sur chaque curseur
+    set("ab ab ab");
+    send(app().sci, sci::SETSEL, 0, 2);
+    for _ in 0..2 {
+        cmds::on_command(SELNEXT);
+    }
+    unsafe { SendMessageW(app().sci, WM_CHAR, 'Z' as usize, 0) };
+    t.check("multi-curseurs : remplacement simultané", &get(), "Z Z Z");
+    send(app().sci, 2326 /* SCI_DELETEBACK */, 0, 0);
+    t.check("multi-curseurs : Retour arrière sur chaque curseur", &get(), "  ");
+    app().f_regex = false;
     a.f_regex = false;
     set("un deux un");
     unsafe {
@@ -396,6 +427,11 @@ autre").unwrap();
     cmds::save_doc(a, a.cur, false);
     t.check("enregistrement atomique : contenu écrit", &std::fs::read_to_string(&atom).unwrap_or_default(), "après enregistrement");
     t.check_bool("enregistrement atomique : aucun fichier temporaire", !std::fs::read_dir(&dir).map_or(true, |r| r.flatten().any(|e| e.file_name().to_string_lossy().ends_with(".tmp"))));
+    // ----- mise à jour : signature épinglée, faux serveur http local (build test-hooks) -----
+    #[cfg(feature = "test-hooks")]
+    for (name, ok) in crate::updater::e2e() {
+        t.check_bool(name, ok);
+    }
     // ----- fichier modifié sur le disque : rechargement automatique + suivi de fin -----
     let ext = dir.join("externe.txt");
     std::fs::write(&ext, "un").ok();

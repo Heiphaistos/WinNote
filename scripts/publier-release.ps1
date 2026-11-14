@@ -20,7 +20,10 @@ $sha = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLower()
 & 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' "/DAppVersion=$ver" installer\winnote.iss; if ($LASTEXITCODE) { throw 'installeur en echec' }
 $setup = "target\installer\WinNote-Setup-$ver.exe"
 & 'D:\Projet\outils\signer\signer.ps1' (Resolve-Path $setup).Path
+# signature Ed25519 epinglee (obligatoire : sans .sig la mise a jour automatique refuse la release)
+$setupFull = (Resolve-Path $setup).Path
+& "$PSScriptRoot\signer-release.ps1" -Version $ver -Files $exe,$setupFull
 Write-Host "exe sha256 = $sha"
 if ($Publier) {
-    gh release create "v$ver" $exe target\release\winnote.exe.sha256 $setup --title "WinNote $ver" --generate-notes
+    gh release create "v$ver" $exe "$exe.sig" target\release\winnote.exe.sha256 $setup "$setupFull.sig" --title "WinNote $ver" --generate-notes
 }

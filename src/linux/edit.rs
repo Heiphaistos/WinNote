@@ -551,8 +551,13 @@ pub fn toggle_follow() {
 
 // ---------- Réglages, récents, session ----------
 
+/// Dossier de réglages ; créé et forcé en 0700 (il contient le texte non enregistré : session, copies de secours).
 fn cfg_dir() -> PathBuf {
-    gtk::glib::user_config_dir().join("winnote")
+    use std::os::unix::fs::PermissionsExt;
+    let d = gtk::glib::user_config_dir().join("winnote");
+    let _ = std::fs::create_dir_all(&d);
+    let _ = std::fs::set_permissions(&d, std::fs::Permissions::from_mode(0o700));
+    d
 }
 
 pub fn add_recent(p: &str) {

@@ -1,5 +1,6 @@
 //! Mise à jour automatique : vérifie la dernière release GitHub, télécharge, contrôle le SHA-256, remplace l'exe et relance.
-//! Exige une release publique contenant `winnote.exe` (empreinte `digest` fournie par GitHub, ou fichier `winnote.exe.sha256`).
+//! Exige une release publique contenant `winnote.exe` (empreinte `digest` fournie par GitHub, ou fichier `winnote.exe.sha256`)
+//! ET `winnote.exe.sig` : signature Ed25519 épinglée (voir `vers::verify_update`), exigée avant toute installation.
 use crate::{app, w};
 use std::ptr::null;
 use windows_sys::Win32::{
@@ -13,6 +14,20 @@ pub const REPO: &str = "Heiphaistos/WinNote";
 pub const WM_UPD_FOUND: u32 = 0x8001;
 pub const WM_UPD_READY: u32 = 0x8002;
 pub const WM_UPD_NONE: u32 = 0x8003;
+
+/// Résultats des threads de mise à jour. Le message Windows ne porte AUCUN pointeur : un autre processus qui posterait
+/// 0x8001-0x8003 ne ferait que vider une file vide (jamais de `Box::from_raw` sur une valeur venue de l'extérieur).
+pub enum Msg {
+    Found(Found),
+    Info(bool, String),
+    Ready(Result<String, String>),
+}
+static INBOX: std::sync::Mutex<Vec<Msg>> = std::sync::Mutex::new(Vec::new());
+
+/// Messages en attente (appelé par le thread de la fenêtre).
+pub fn drain() -> Vec<Msg> {
+    std::mem::take(&mut *INBOX.lock().unwrap_or_else(|e| e.into_inner()))
+}
 
 #[derive(Debug)]
 pub struct Found { pub version: String, pub url: String, pub sha: String }
@@ -29,18 +44,35 @@ impl Drop for Handle {
     }
 }
 
-fn http_get(host: &str, path: &str) -> Result<Vec<u8>, String> {
+/// Adresse décomposée : (https ?, hôte, port, chemin). Seul HTTPS:443 hors build `test-hooks` (faux serveur http local des tests).
+fn split_url(u: &str) -> Option<(bool, String, u16, String)> {
+    let (secure, r) = match u.strip_prefix("https://") {
+        Some(r) => (true, r),
+        None if cfg!(feature = "test-hooks") => (false, u.strip_prefix("http://")?),
+        None => return None,
+    };
+    let (hp, p) = r.split_once('/')?;
+    let (h, port) = match hp.split_once(':') {
+        Some((h, p)) if cfg!(feature = "test-hooks") => (h, p.parse().ok()?),
+        Some(_) => return None,
+        None => (hp, if secure { 443 } else { 80 }),
+    };
+    Some((secure, h.to_string(), port, format!("/{p}")))
+}
+
+fn http_get(url: &str) -> Result<Vec<u8>, String> {
+    let (secure, host, port, path) = split_url(url).ok_or("URL invalide")?;
     unsafe {
         let err = |what: &str| format!("{what} (code Windows {})", GetLastError());
         let ses = Handle(WinHttpOpen(w("WinNote-updater").as_ptr(), WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY, null(), null(), 0));
         if ses.0.is_null() {
             return Err(err("WinHTTP indisponible"));
         }
-        let con = Handle(WinHttpConnect(ses.0, w(host).as_ptr(), 443, 0));
+        let con = Handle(WinHttpConnect(ses.0, w(&host).as_ptr(), port, 0));
         if con.0.is_null() {
             return Err(err("connexion impossible"));
         }
-        let req = Handle(WinHttpOpenRequest(con.0, w("GET").as_ptr(), w(path).as_ptr(), null(), null(), null(), WINHTTP_FLAG_SECURE));
+        let req = Handle(WinHttpOpenRequest(con.0, w("GET").as_ptr(), w(&path).as_ptr(), null(), null(), null(), if secure { WINHTTP_FLAG_SECURE } else { 0 }));
         if req.0.is_null() {
             return Err(err("requête impossible"));
         }
@@ -75,12 +107,6 @@ fn http_get(host: &str, path: &str) -> Result<Vec<u8>, String> {
     }
 }
 
-fn split_url(u: &str) -> Option<(String, String)> {
-    let r = u.strip_prefix("https://")?;
-    let (h, p) = r.split_once('/')?;
-    Some((h.to_string(), format!("/{p}")))
-}
-
 pub use crate::vers::{digest_in, json_str, newer, trusted_download};
 
 pub fn sha256_hex(data: &[u8]) -> String {
@@ -103,8 +129,7 @@ pub fn parse_release(body: &str, local: &str) -> Check {
     let sha = match digest_in(&body[ai..]) {
         Some(h) => h,
         None => {
-            let (h, p) = split_url(&format!("{url}.sha256")).ok_or("URL invalide")?;
-            let t = String::from_utf8_lossy(&http_get(&h, &p)?).to_string();
+            let t = String::from_utf8_lossy(&http_get(&format!("{url}.sha256"))?).to_string();
             let h = t.split_whitespace().next().ok_or("fichier .sha256 vide")?.to_lowercase();
             if h.len() != 64 || !h.bytes().all(|b| b.is_ascii_hexdigit()) {
                 return Err("fichier .sha256 invalide".into());
@@ -115,34 +140,50 @@ pub fn parse_release(body: &str, local: &str) -> Check {
     Ok(Some(Found { version: tag, url, sha }))
 }
 
+/// Adresse de l'API « dernière release » ; `WINNOTE_UPDATE_URL` (builds `test-hooks` uniquement) la remplace par un faux serveur local.
+fn api_url() -> String {
+    #[cfg(feature = "test-hooks")]
+    if let Ok(u) = std::env::var("WINNOTE_UPDATE_URL") {
+        return u;
+    }
+    format!("https://api.github.com/repos/{REPO}/releases/latest")
+}
+
 pub fn fetch() -> Check {
-    let body = String::from_utf8_lossy(&http_get("api.github.com", &format!("/repos/{REPO}/releases/latest"))?).to_string();
+    let body = String::from_utf8_lossy(&http_get(&api_url())?).to_string();
     parse_release(&body, env!("CARGO_PKG_VERSION"))
 }
 
-fn post<T>(msg: u32, v: T) {
-    let p = Box::into_raw(Box::new(v)) as isize;
-    unsafe { PostMessageW(app().hwnd, msg, 0, p) };
+fn post(msg: u32, v: Msg) {
+    INBOX.lock().unwrap_or_else(|e| e.into_inner()).push(v);
+    unsafe { PostMessageW(app().hwnd, msg, 0, 0) };
 }
 
 /// Vérification en arrière-plan ; le résultat revient par message à la fenêtre principale (`manual` = afficher aussi « à jour » et les erreurs).
 pub fn check(manual: bool) {
     std::thread::spawn(move || match fetch() {
-        Ok(Some(f)) => post(WM_UPD_FOUND, f),
-        Ok(None) => post(WM_UPD_NONE, (manual, "WinNote est à jour.".to_string())),
-        Err(e) => post(WM_UPD_NONE, (manual, format!("Recherche de mise à jour impossible : {e}"))),
+        Ok(Some(f)) => post(WM_UPD_FOUND, Msg::Found(f)),
+        Ok(None) => post(WM_UPD_NONE, Msg::Info(manual, "WinNote est à jour.".to_string())),
+        Err(e) => post(WM_UPD_NONE, Msg::Info(manual, format!("Recherche de mise à jour impossible : {e}"))),
     });
 }
 
-/// Télécharge, vérifie l'empreinte, puis signale que la mise à jour est prête.
+/// Contrôle d'une mise à jour téléchargée : empreinte annoncée, puis signature épinglée de `<url>.sig` (absente = refus).
+pub fn verify_download(f: &Found, bytes: &[u8]) -> Result<(), String> {
+    let sha = sha256_hex(bytes);
+    if sha != f.sha.to_lowercase() {
+        return Err("empreinte SHA-256 incorrecte : mise à jour refusée".into());
+    }
+    let sig = http_get(&format!("{}.sig", f.url)).map_err(|e| format!("signature de la mise à jour introuvable ({e}) : installation refusée"))?;
+    crate::vers::verify_update(&f.version, &f.url, &sha, &sig)
+}
+
+/// Télécharge, vérifie l'empreinte et la signature, puis signale que la mise à jour est prête.
 pub fn download(f: Found) {
     std::thread::spawn(move || {
         let res = (|| -> Result<String, String> {
-            let (h, p) = split_url(&f.url).ok_or("URL invalide")?;
-            let bytes = http_get(&h, &p)?;
-            if sha256_hex(&bytes) != f.sha.to_lowercase() {
-                return Err("empreinte SHA-256 incorrecte : mise à jour refusée".into());
-            }
+            let bytes = http_get(&f.url)?;
+            verify_download(&f, &bytes)?;
             // create_new : un fichier ou un lien déposé d'avance sous ce nom dans %TEMP% est refusé, pas écrasé
             let tmp = std::env::temp_dir().join(format!("winnote-update-{}.exe", std::process::id()));
             let _ = std::fs::remove_file(&tmp);
@@ -154,7 +195,7 @@ pub fn download(f: Found) {
             *LAST_SHA.lock().unwrap_or_else(|e| e.into_inner()) = Some(f.sha.to_lowercase());
             Ok(tmp.to_string_lossy().to_string())
         })();
-        post(WM_UPD_READY, res);
+        post(WM_UPD_READY, Msg::Ready(res));
     });
 }
 
@@ -189,6 +230,69 @@ pub fn cleanup() {
     if let Ok(cur) = std::env::current_exe() {
         let _ = std::fs::remove_file(cur.with_extension("old.exe"));
     }
+}
+
+/// Essai de bout en bout (appelé par l'autotest, builds `test-hooks` seulement) : faux serveur http local, API simulée,
+/// téléchargement réel par WinHTTP, signature valide acceptée / fausse refusée / absente refusée / contenu modifié refusé.
+#[cfg(feature = "test-hooks")]
+pub fn e2e() -> Vec<(&'static str, bool)> {
+    use ed25519_compact::{KeyPair, Seed};
+    use std::io::{Read, Write};
+    use std::sync::atomic::{AtomicU8, Ordering::SeqCst};
+    use std::sync::Arc;
+    let mode = Arc::new(AtomicU8::new(0)); // 0 = bonne signature, 1 = signature d'une autre clé, 2 = pas de .sig (404)
+    let exe: Vec<u8> = b"MZ faux winnote 9.9.9".to_vec();
+    let sha = sha256_hex(&exe);
+    let good = KeyPair::from_seed(Seed::new([9; 32]));
+    let evil = KeyPair::from_seed(Seed::new([10; 32]));
+    let hex: String = good.pk.iter().map(|b| format!("{b:02x}")).collect();
+    let sig_good = good.sk.sign(crate::vers::signed_msg("v9.9.9", "winnote.exe", &sha), None).as_ref().to_vec();
+    let sig_evil = evil.sk.sign(crate::vers::signed_msg("v9.9.9", "winnote.exe", &sha), None).as_ref().to_vec();
+    let srv = std::net::TcpListener::bind("127.0.0.1:0").expect("port local");
+    let port = srv.local_addr().map(|a| a.port()).unwrap_or(0);
+    let (m2, exe2) = (mode.clone(), exe.clone());
+    let api = format!("{{\"tag_name\":\"v9.9.9\",\"assets\":[{{\"name\":\"winnote.exe\",\"digest\":\"sha256:{sha}\",\"browser_download_url\":\"http://127.0.0.1:{port}/dl/winnote.exe\"}}]}}");
+    std::thread::spawn(move || {
+        for s in srv.incoming().flatten() {
+            let mut s = s;
+            let mut buf = [0u8; 2048];
+            let n = s.read(&mut buf).unwrap_or(0);
+            let req = String::from_utf8_lossy(&buf[..n]).to_string();
+            let path = req.split_whitespace().nth(1).unwrap_or("").to_string();
+            let (code, body): (&str, Vec<u8>) = match path.as_str() {
+                "/api" => ("200 OK", api.clone().into_bytes()),
+                "/dl/winnote.exe" => ("200 OK", exe2.clone()),
+                "/dl/winnote.exe.sig" => match m2.load(SeqCst) {
+                    0 => ("200 OK", sig_good.clone()),
+                    1 => ("200 OK", sig_evil.clone()),
+                    _ => ("404 Not Found", Vec::new()),
+                },
+                _ => ("404 Not Found", Vec::new()),
+            };
+            let _ = write!(s, "HTTP/1.1 {code}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len());
+            let _ = s.write_all(&body);
+        }
+    });
+    std::env::set_var("WINNOTE_UPDATE_URL", format!("http://127.0.0.1:{port}/api"));
+    std::env::set_var("WINNOTE_UPDATE_PUBKEY", &hex);
+    let mut r = Vec::new();
+    let found = fetch().ok().flatten();
+    r.push(("mise à jour : version 9.9.9 détectée via le faux serveur", found.as_ref().map_or(false, |f| f.version == "v9.9.9")));
+    if let Some(f) = found {
+        let bytes = http_get(&f.url).unwrap_or_default();
+        r.push(("mise à jour : fichier téléchargé identique", bytes == exe));
+        r.push(("mise à jour : signature valide acceptée", verify_download(&f, &bytes).is_ok()));
+        let mut bad = bytes.clone();
+        bad[3] ^= 1;
+        r.push(("mise à jour : contenu modifié refusé", verify_download(&f, &bad).is_err()));
+        mode.store(1, SeqCst);
+        r.push(("mise à jour : signature d'une autre clé refusée", verify_download(&f, &bytes).is_err()));
+        mode.store(2, SeqCst);
+        r.push(("mise à jour : signature absente refusée", verify_download(&f, &bytes).unwrap_err().contains("introuvable")));
+    }
+    std::env::remove_var("WINNOTE_UPDATE_URL");
+    std::env::remove_var("WINNOTE_UPDATE_PUBKEY");
+    r
 }
 
 #[cfg(test)]

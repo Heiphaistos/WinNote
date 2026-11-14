@@ -274,10 +274,15 @@ unsafe fn on_timer(a: &mut App, id: usize) {
 
 static PROMPTING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
-unsafe fn on_update_msg(a: &mut App, m: u32, lp: LPARAM) {
+unsafe fn on_update_msg(a: &mut App) {
+    for m in updater::drain() {
+        on_update_one(a, m);
+    }
+}
+
+unsafe fn on_update_one(a: &mut App, m: updater::Msg) {
     match m {
-        updater::WM_UPD_FOUND => {
-            let f = *Box::from_raw(lp as *mut updater::Found);
+        updater::Msg::Found(f) => {
             if PROMPTING.swap(true, std::sync::atomic::Ordering::SeqCst) {
                 return; // une proposition est deja affichee (verification auto + manuelle simultanees)
             }
@@ -288,22 +293,19 @@ unsafe fn on_update_msg(a: &mut App, m: u32, lp: LPARAM) {
                 updater::download(f);
             }
         }
-        updater::WM_UPD_NONE => {
-            let (manual, msg) = *Box::from_raw(lp as *mut (bool, String));
+        updater::Msg::Info(manual, msg) => {
             if manual {
                 cmds::msg_box(&msg);
             }
         }
-        _ => match *Box::from_raw(lp as *mut Result<String, String>) {
-            Ok(path) => {
-                session::save(a);
-                match updater::apply(&path) {
-                    Ok(()) => save_all_and_quit(a),
-                    Err(e) => cmds::msg_box(&format!("Mise à jour impossible : {e}")),
-                }
+        updater::Msg::Ready(Ok(path)) => {
+            session::save(a);
+            match updater::apply(&path) {
+                Ok(()) => save_all_and_quit(a),
+                Err(e) => cmds::msg_box(&format!("Mise à jour impossible : {e}")),
             }
-            Err(e) => cmds::msg_box(&format!("Mise à jour impossible : {e}")),
-        },
+        }
+        updater::Msg::Ready(Err(e)) => cmds::msg_box(&format!("Mise à jour impossible : {e}")),
     }
 }
 
@@ -458,7 +460,7 @@ unsafe extern "system" fn wndproc(h: HWND, m: u32, wp: WPARAM, lp: LPARAM) -> LR
             0
         }
         updater::WM_UPD_FOUND | updater::WM_UPD_NONE | updater::WM_UPD_READY => {
-            on_update_msg(a, m, lp);
+            on_update_msg(a);
             0
         }
         _ => DefWindowProcW(h, m, wp, lp),
@@ -509,6 +511,7 @@ fn main() {
         0
     }
     unsafe { windows_sys::Win32::System::Diagnostics::Debug::SetUnhandledExceptionFilter(Some(crash_filter)) };
+    #[cfg(feature = "test-hooks")]
     if let Some(i) = args.iter().position(|a| a == "--apply-update") {
         // mode sans fenêtre : remplace l'exe par le fichier indiqué puis relance (utilisé par la mise à jour et ses tests)
         std::process::exit(args.get(i + 1).map_or(2, |f| updater::apply(f).is_err() as i32));
