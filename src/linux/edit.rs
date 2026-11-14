@@ -628,6 +628,9 @@ pub fn save_session() {
             continue;
         }
         let enc = Enc::ALL.iter().position(|&e| e == t.enc).unwrap_or(0);
+        let auto = t.path.as_deref().map_or(0, lang::by_path);
+        let lang = if t.lang != auto { LANGS[t.lang].name.to_string() } else { String::new() };
+        let (caret, first) = (send(t.sci, sci::GETCURRENTPOS, 0, 0), send(t.sci, sci::GETFIRSTVISIBLE, 0, 0));
         let backup = if t.dirty || t.path.is_none() {
             let n = format!("{i}.txt");
             if std::fs::write(d.join(&n), mtext(t.sci)).is_err() {
@@ -637,7 +640,7 @@ pub fn save_session() {
         } else {
             String::new()
         };
-        lines.push(format!("doc\t{}\t{}\t{}\t{}\t{}", t.path.clone().unwrap_or_default(), enc, t.dirty as u8, t.untitled, backup));
+        lines.push(crate::sessfmt::format(&crate::sessfmt::Rec { path: t.path.clone().unwrap_or_default(), enc, caret, first, dirty: t.dirty, untitled: t.untitled, backup, pinned: t.pinned, lang }));
     }
     let _ = std::fs::write(d.join("session.txt"), lines.join("\n"));
 }
@@ -648,25 +651,35 @@ pub fn restore_session() -> bool {
     let a = app();
     let (mut cur, mut n) = (0usize, 0);
     for l in s.lines() {
-        let f: Vec<&str> = l.split('\t').collect();
-        match f.as_slice() {
-            ["cur", c] => cur = c.parse().unwrap_or(0),
-            ["doc", path, enc, dirty, untitled, backup] => {
-                let enc = Enc::ALL.get(enc.parse().unwrap_or(0)).copied().unwrap_or(Enc::Utf8);
-                let path = (!path.is_empty()).then(|| path.to_string());
-                let text = if backup.is_empty() {
-                    match path.as_ref().and_then(|p| std::fs::read(p).ok()) {
-                        Some(b) => doc::decode(&b).0,
-                        None => continue,
-                    }
-                } else {
-                    if crate::fileops::plain_name(backup) { std::fs::read(d.join(backup)).unwrap_or_default() } else { continue }
-                };
-                new_tab(path, Some((text, enc)), *dirty == "1", untitled.parse().unwrap_or(0));
-                n += 1;
-            }
-            _ => {}
+        if let Some(c) = l.strip_prefix("cur\t") {
+            cur = c.parse().unwrap_or(0);
+            continue;
         }
+        let Some(r) = crate::sessfmt::parse(l) else { continue };
+        let enc = Enc::ALL.get(r.enc).copied().unwrap_or(Enc::Utf8);
+        let path = (!r.path.is_empty()).then(|| r.path.clone());
+        let text = if r.backup.is_empty() {
+            match path.as_ref().and_then(|p| std::fs::read(p).ok()) {
+                Some(b) => doc::decode(&b).0,
+                None => continue,
+            }
+        } else if crate::fileops::plain_name(&r.backup) {
+            std::fs::read(d.join(&r.backup)).unwrap_or_default()
+        } else {
+            continue;
+        };
+        new_tab(path, Some((text, enc)), r.dirty, r.untitled);
+        let last = a.docs.len() - 1;
+        let sci_ptr = a.docs[last].sci;
+        if let Some(i) = LANGS.iter().position(|l| l.name == r.lang).filter(|_| !r.lang.is_empty()) {
+            a.docs[last].lang = i;
+            set_lexer(sci_ptr, i);
+            style_view(sci_ptr, i);
+        }
+        a.docs[last].pinned = r.pinned;
+        send(sci_ptr, sci::SETSEL, r.caret.max(0) as usize, r.caret.max(0));
+        send(sci_ptr, sci::SETFIRSTVISIBLELINE, r.first.max(0) as usize, 0);
+        n += 1;
     }
     if n > 0 {
         if a.docs.len() > n && a.docs[0].path.is_none() && !a.docs[0].dirty && mtext(a.docs[0].sci).is_empty() {

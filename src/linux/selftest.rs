@@ -516,6 +516,22 @@ echo v9
     t.check("Markdown direct : italique", &sty(21), "8");
     t.check("Markdown direct : code", &sty(29), "10");
     t.check("Markdown direct : puce", &sty(32), "15");
+    // session complète : onglet épinglé, langage choisi à la main, curseur, texte non enregistré
+    edit::new_tab(None, None, true, 0);
+    set("a\nb\nc");
+    a.docs[a.cur].pinned = true;
+    lang("Python");
+    send(a.sci, sci::SETSEL, 2, 2);
+    a.nosession = false;
+    edit::save_session();
+    a.nosession = true;
+    let sess = std::fs::read_to_string(gtk::glib::user_config_dir().join("winnote").join("session").join("session.txt")).unwrap_or_default();
+    t.check("session : épinglé et langage écrits", &sess.lines().any(|l| l.ends_with("\t1\tPython")).to_string(), "true");
+    let before = a.docs.len();
+    edit::restore_session();
+    let back = a.docs.iter().skip(before).find(|d| d.pinned && LANGS[d.lang].name == "Python");
+    t.check("session : onglet restauré épinglé, en Python", &back.is_some().to_string(), "true");
+    t.check("session : curseur restauré", &back.map_or(-1, |d| send(d.sci, sci::GETCURRENTPOS, 0, 0)).to_string(), "2");
     let _ = std::fs::remove_dir_all(&dir);
     t.log.push(format!("{} échec(s)", t.fails));
     let _ = std::fs::write(log_path, t.log.join("\n"));

@@ -717,6 +717,22 @@ fn b() {
     cmds::on_command(EOL);
     t.check("convertir en CRLF", &get(), "a\r\nb");
 
+    // ----- session complète : onglet épinglé, langage choisi à la main, curseur, texte non enregistré -----
+    cmds::new_doc(a);
+    set("a\nb\nc");
+    a.docs[a.cur].dirty = true;
+    a.docs[a.cur].pinned = true;
+    lang("Python");
+    send(a.sci, sci::SETSEL, 2, 2);
+    crate::session::save(a);
+    let line = std::fs::read_to_string(std::path::PathBuf::from(std::env::var("APPDATA").unwrap_or_default()).join("WinNote").join("session").join("session.txt")).unwrap_or_default();
+    t.check_bool("session : épinglé et langage écrits", line.lines().any(|l| l.ends_with("\t1\tPython")));
+    let before = a.docs.len();
+    crate::session::restore(a);
+    let back = a.docs.iter().skip(before).find(|d| d.pinned && LANGS[d.lang].name == "Python");
+    t.check_bool("session : onglet restauré épinglé, en Python", back.is_some());
+    t.check("session : curseur restauré", &back.map_or(-1, |d| d.caret).to_string(), "2");
+
     let _ = std::fs::remove_dir_all(&dir);
     t.log.push(format!("{} échec(s)", t.fails));
     let _ = std::fs::write(log_path, t.log.join("\n"));

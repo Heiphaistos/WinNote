@@ -49,7 +49,11 @@ pub fn save(a: &mut App) {
         if doc.path.is_none() && !doc.dirty {
             continue; // onglet vide jamais touché : rien à restaurer
         }
-        let (path, enc, caret, first, dirty, untitled) = (doc.path.clone().unwrap_or_default(), enc_id(doc.enc), doc.caret, doc.first, doc.dirty as u8, doc.untitled);
+        let (path, enc, caret, first, dirty, untitled) = (doc.path.clone().unwrap_or_default(), enc_id(doc.enc), doc.caret, doc.first, doc.dirty, doc.untitled);
+        // langage mémorisé seulement s'il a été changé à la main (sinon l'extension le détermine à la réouverture)
+        let auto = doc.path.as_deref().map_or(0, crate::lang::by_path);
+        let lang = if doc.lang != auto { crate::lang::LANGS[doc.lang].name.to_string() } else { String::new() };
+        let pinned = doc.pinned;
         let backup = if keep {
             let name = format!("{i}.txt");
             let text = crate::cmds::text_of_doc(a, i);
@@ -60,7 +64,7 @@ pub fn save(a: &mut App) {
         } else {
             String::new()
         };
-        lines.push(format!("doc\t{path}\t{enc}\t{caret}\t{first}\t{dirty}\t{untitled}\t{backup}"));
+        lines.push(crate::sessfmt::format(&crate::sessfmt::Rec { path, enc, caret, first, dirty, untitled, backup, pinned, lang }));
     }
     let _ = std::fs::write(d.join("session.txt"), lines.join("\n"));
 }
@@ -72,29 +76,35 @@ pub fn restore(a: &mut App) -> bool {
     let mut cur = 0usize;
     let mut n = 0;
     for l in s.lines() {
-        let f: Vec<&str> = l.split('\t').collect();
-        match f.as_slice() {
-            ["cur", c] => cur = c.parse().unwrap_or(0),
-            ["doc", path, enc, caret, first, dirty, untitled, backup] => {
-                let enc = Enc::ALL.get(enc.parse().unwrap_or(0)).copied().unwrap_or(Enc::Utf8);
-                let path = (!path.is_empty()).then(|| path.to_string());
-                let text = if backup.is_empty() {
-                    match path.as_ref().and_then(|p| std::fs::read(p).ok()) {
-                        Some(b) => crate::doc::decode(&b).0,
-                        None => continue,
-                    }
-                } else {
-                    if crate::fileops::plain_name(backup) { std::fs::read(d.join(backup)).unwrap_or_default() } else { continue }
-                };
-                let dirty = *dirty == "1";
-                crate::cmds::push_doc_full(a, path, Some((text, enc)), dirty, untitled.parse().unwrap_or(0));
-                let last = a.docs.len() - 1;
-                a.docs[last].caret = caret.parse().unwrap_or(0);
-                a.docs[last].first = first.parse().unwrap_or(0);
-                n += 1;
-            }
-            _ => {}
+        if let Some(c) = l.strip_prefix("cur\t") {
+            cur = c.parse().unwrap_or(0);
+            continue;
         }
+        let Some(r) = crate::sessfmt::parse(l) else { continue };
+        let enc = Enc::ALL.get(r.enc).copied().unwrap_or(Enc::Utf8);
+        let path = (!r.path.is_empty()).then(|| r.path.clone());
+        let text = if r.backup.is_empty() {
+            match path.as_ref().and_then(|p| std::fs::read(p).ok()) {
+                Some(b) => crate::doc::decode(&b).0,
+                None => continue,
+            }
+        } else if crate::fileops::plain_name(&r.backup) {
+            std::fs::read(d.join(&r.backup)).unwrap_or_default()
+        } else {
+            continue;
+        };
+        crate::cmds::push_doc_full(a, path, Some((text, enc)), r.dirty, r.untitled);
+        if let Some(i) = crate::lang::LANGS.iter().position(|l| l.name == r.lang).filter(|_| !r.lang.is_empty()) {
+            crate::cmds::set_language(i);
+        }
+        let last = a.docs.len() - 1;
+        a.docs[last].caret = r.caret;
+        a.docs[last].first = r.first;
+        a.docs[last].pinned = r.pinned;
+        // aussi dans la vue : switch_to() réenregistre l'état de la vue de l'onglet courant (sinon le dernier onglet perdrait son curseur)
+        crate::sci::send(a.sci, crate::sci::SETSEL, r.caret.max(0) as usize, r.caret.max(0));
+        crate::sci::send(a.sci, crate::sci::SETFIRSTVISIBLELINE, r.first.max(0) as usize, 0);
+        n += 1;
     }
     if n > 0 {
         crate::cmds::switch_to(a, cur.min(a.docs.len() - 1));

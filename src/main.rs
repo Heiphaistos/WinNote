@@ -27,6 +27,7 @@ mod print;
 mod selftest;
 mod sci;
 mod session;
+mod sessfmt;
 mod settings;
 mod shell;
 mod sidebar;
