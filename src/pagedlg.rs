@@ -1,12 +1,13 @@
 //! Boîte « Mise en page de l'impression » (Windows) : fenêtre modale avec marge et zones gauche / centre / droite de l'en-tête et du pied.
 use crate::extras::PrintLayout;
 use crate::ui::scale;
+use crate::theme::THEMES;
 use crate::{app, w};
 use std::cell::{Cell, RefCell};
 use std::ptr::{null, null_mut};
 use windows_sys::Win32::{
     Foundation::*,
-    Graphics::Gdi::COLOR_BTNFACE,
+    Graphics::{Dwm::DwmSetWindowAttribute, Gdi::*},
     System::LibraryLoader::GetModuleHandleW,
     UI::{Input::KeyboardAndMouse::EnableWindow, WindowsAndMessaging::*},
 };
@@ -23,6 +24,18 @@ thread_local! {
     static START: RefCell<PrintLayout> = RefCell::new(PrintLayout::default());
     static RESULT: RefCell<Option<PrintLayout>> = const { RefCell::new(None) };
     static DONE: Cell<bool> = const { Cell::new(false) };
+    /// Pinceaux du thème courant (fond de la boîte, fond des champs), libérés à la fermeture.
+    static BRUSHES: Cell<(HBRUSH, HBRUSH)> = const { Cell::new((null_mut(), null_mut())) };
+}
+
+/// Largeur d'une zone de texte et pas entre zones (la zone « Page {page} / {pages} » doit tenir en entier).
+const ZW: i32 = 150;
+const ZSTEP: i32 = 156;
+const CLIENT_W: i32 = 130 + ZSTEP * 3 + 16;
+
+fn blend(a: u32, b: u32, t: u32) -> u32 {
+    let f = |s: u32| ((a >> s & 0xFF) * (100 - t) + (b >> s & 0xFF) * t) / 100;
+    f(0) | f(8) << 8 | f(16) << 16
 }
 
 fn text_of(h: HWND, id: isize) -> String {
@@ -70,21 +83,45 @@ unsafe extern "system" fn proc_(h: HWND, m: u32, wp: WPARAM, lp: LPARAM) -> LRES
             child(h, "STATIC", "Marge (mm)", lbl, 0, (16, 18, 110, 18), -1);
             child(h, "EDIT", "", edit | ES_NUMBER as u32 | tab, WS_EX_CLIENTEDGE, (130, 14, 60, 24), ID_MARGIN);
             for (i, n) in ["Gauche", "Centre", "Droite"].iter().enumerate() {
-                child(h, "STATIC", n, lbl, 0, (130 + 115 * i as i32, 48, 100, 16), -1);
+                child(h, "STATIC", n, lbl, 0, (130 + ZSTEP * i as i32, 48, ZW, 16), -1);
             }
             for (row, (name, first)) in [("En-tête", ID_HEAD), ("Pied de page", ID_FOOT)].iter().enumerate() {
                 let y = 68 + 34 * row as i32;
                 child(h, "STATIC", name, lbl, 0, (16, y + 4, 110, 18), -1);
                 for i in 0..3 {
-                    child(h, "EDIT", "", edit | tab, WS_EX_CLIENTEDGE, (130 + 115 * i, y, 108, 24), first + i as isize);
+                    child(h, "EDIT", "", edit | tab, WS_EX_CLIENTEDGE, (130 + ZSTEP * i, y, ZW, 24), first + i as isize);
                 }
             }
-            child(h, "STATIC", "Variables : {fichier} {date} {page} {pages}. Une zone peut rester vide.", lbl, 0, (16, 140, 470, 34), -1);
+            child(h, "STATIC", "Variables : {fichier} {date} {page} {pages}. Une zone peut rester vide.", lbl, 0, (16, 140, CLIENT_W - 32, 34), -1);
             child(h, "BUTTON", "Valeurs par défaut", BS_PUSHBUTTON as u32 | tab, 0, (16, 182, 130, 28), ID_DEFAULT);
-            child(h, "BUTTON", "Enregistrer", BS_DEFPUSHBUTTON as u32 | tab, 0, (286, 182, 96, 28), ID_OK);
-            child(h, "BUTTON", "Annuler", BS_PUSHBUTTON as u32 | tab, 0, (390, 182, 96, 28), ID_CANCEL);
+            child(h, "BUTTON", "Enregistrer", BS_DEFPUSHBUTTON as u32 | tab, 0, (CLIENT_W - 16 - 200, 182, 96, 28), ID_OK);
+            child(h, "BUTTON", "Annuler", BS_PUSHBUTTON as u32 | tab, 0, (CLIENT_W - 16 - 96, 182, 96, 28), ID_CANCEL);
             START.with(|s| fill(h, &s.borrow()));
+            let t = &THEMES[app().theme];
+            BRUSHES.with(|b| b.set((CreateSolidBrush(t.ui_bg), CreateSolidBrush(blend(t.ui_bg, t.bg, 80)))));
+            DwmSetWindowAttribute(h, 20, &(t.dark as u32) as *const u32 as *const _, 4); // barre de titre claire / sombre
+            if t.dark {
+                // boutons et cases en thème sombre du système (même méthode que la barre latérale)
+                let cls = w("DarkMode_Explorer");
+                for id in [ID_DEFAULT, ID_OK, ID_CANCEL] {
+                    windows_sys::Win32::UI::Controls::SetWindowTheme(GetDlgItem(h, id as i32), cls.as_ptr(), null());
+                }
+            }
             0
+        }
+        // fond de la boîte, textes et champs aux couleurs du thème (sinon : fenêtre grise claire au milieu d'un thème sombre)
+        WM_ERASEBKGND => {
+            let mut rc: RECT = std::mem::zeroed();
+            GetClientRect(h, &mut rc);
+            FillRect(wp as HDC, &rc, BRUSHES.with(|b| b.get().0));
+            1
+        }
+        0x0138 /* WM_CTLCOLORSTATIC */ | 0x0133 /* WM_CTLCOLOREDIT */ => {
+            let t = &THEMES[app().theme];
+            let edit = m == 0x0133;
+            SetTextColor(wp as HDC, t.ui_fg);
+            SetBkColor(wp as HDC, if edit { blend(t.ui_bg, t.bg, 80) } else { t.ui_bg });
+            BRUSHES.with(|b| if edit { b.get().1 } else { b.get().0 }) as LRESULT
         }
         WM_COMMAND => {
             match (wp & 0xffff) as isize {
@@ -108,6 +145,11 @@ unsafe extern "system" fn proc_(h: HWND, m: u32, wp: WPARAM, lp: LPARAM) -> LRES
             0
         }
         WM_DESTROY => {
+            BRUSHES.with(|b| {
+                let (a, e) = b.replace((null_mut(), null_mut()));
+                DeleteObject(a);
+                DeleteObject(e);
+            });
             DONE.with(|d| d.set(true));
             0
         }
@@ -138,7 +180,7 @@ pub fn build(owner: HWND, start: &PrintLayout) -> HWND {
         };
         RegisterClassExW(&c); // déjà enregistrée : sans effet
         let style = WS_POPUP | WS_CAPTION | WS_SYSMENU;
-        let mut rc = RECT { left: 0, top: 0, right: scale(502), bottom: scale(224) };
+        let mut rc = RECT { left: 0, top: 0, right: scale(CLIENT_W), bottom: scale(224) };
         AdjustWindowRectEx(&mut rc, style, 0, WS_EX_DLGMODALFRAME);
         let (ww, wh) = (rc.right - rc.left, rc.bottom - rc.top);
         let mut or = RECT { left: 0, top: 0, right: 0, bottom: 0 };

@@ -212,8 +212,9 @@ fn replace_in_doc(what: &[u8], rep: &[u8]) -> u32 {
         replace_target(rep);
         let e = send(s, sci::GETTARGETEND, 0, 0);
         crate::findx::shift_end(send(s, sci::GETLENGTH, 0, 0) - before);
-        pos = if e == ts { e + 1 } else { e };
-        let _ = te0;
+        // correspondance vide (^, $, \b...) : on saute un caractère APRÈS le texte inséré, sinon `$` → `;` se re-trouve
+        // indéfiniment au même endroit (boucle sans fin, interface figée)
+        pos = if te0 == ts { send(s, 2418 /* SCI_POSITIONAFTER */, e as usize, 0).max(e + 1) } else { e };
         n += 1;
     }
     send(s, sci::ENDUNDO, 0, 0);

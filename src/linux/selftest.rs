@@ -119,6 +119,16 @@ pub fn run(log_path: &str) -> i32 {
     a.find.regex.set_active(true);
     find::replace_all();
     t.check("regex avec groupe de capture", &get(), "a<1> b<22>");
+    set("a\nb");
+    a.find.find.set_text("$");
+    a.find.repl.set_text(";");
+    find::replace_all();
+    t.check("regex : $ sur chaque ligne (pas de boucle sans fin)", &get(), "a;\nb;");
+    set("a\nb");
+    a.find.find.set_text("^");
+    a.find.repl.set_text("- ");
+    find::replace_all();
+    t.check("regex : ^ sur chaque ligne", &get(), "- a\n- b");
     a.find.regex.set_active(false);
     set("aAa");
     a.find.find.set_text("a");

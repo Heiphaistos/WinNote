@@ -243,12 +243,13 @@ fn replace_in_doc(what: &[u8], rep: &[u8]) -> u32 {
         if pos > hi || search(pos, hi, what) < 0 {
             break;
         }
-        let ts = send(s, sci::GETTARGETSTART, 0, 0);
+        let (ts, te0) = (send(s, sci::GETTARGETSTART, 0, 0), send(s, sci::GETTARGETEND, 0, 0));
         let before = send(s, sci::GETLENGTH, 0, 0);
         replace_target(rep);
         let e = send(s, sci::GETTARGETEND, 0, 0);
         crate::findx::shift_end(send(s, sci::GETLENGTH, 0, 0) - before);
-        pos = if e == ts { e + 1 } else { e };
+        // correspondance vide (^, $) : sauter un caractère après le texte inséré (sinon boucle sans fin)
+        pos = if te0 == ts { send(s, 2418 /* SCI_POSITIONAFTER */, e as usize, 0).max(e + 1) } else { e };
         n += 1;
     }
     send(s, sci::ENDUNDO, 0, 0);

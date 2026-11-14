@@ -42,3 +42,14 @@ Aucune version incrementee (reste 0.7.0), rien de publie.
 - Selftest Windows (APPDATA redirige) : 0 echec, dont 3 nouveaux controles (dossier / peripherique refuses, enregistrement atomique sans fichier `.tmp`).
 - Selftest Linux (WSL Ubuntu 22.04, Xvfb) : 94 controles OK, 0 echec.
 - Essais reels : fichier de 87 Mo + 4 autres onglets ouverts, fenetre non figee ; fermeture 40-60 ms, 0 processus restant ; arret brutal (kill) apres frappe : le texte revient au redemarrage dans un seul onglet ; impression PDF (`--print-to`) 1 page.
+
+## Suite (nuit 2, branche `night2`) : restes traites
+
+| Sujet | Etat |
+|---|---|
+| Authenticite de la mise a jour | FAIT : signature Ed25519 epinglee (`src/vers.rs`), `.sig` obligatoire, Windows + AppImage ; voir `docs/MISE-A-JOUR-SIGNEE.md` (transition 0.7.0 -> 0.7.1 incluse) |
+| `WINNOTE_UPDATE_URL` / `--apply-update` | FAIT : seulement avec `--features test-hooks` (absents du binaire release, verifie par recherche de chaines) |
+| Messages 0x8001-0x8003 | FAIT : ne portent plus aucun pointeur (file interne au processus) ; un message poste de l'exterieur vide une file vide |
+| `~/.config/winnote` Linux | FAIT : 0700 force a chaque acces |
+| Boucle sans fin Remplacer tout avec `$` / `^` (correspondance vide + remplacement non vide) | CORRIGE (Windows + Linux), tests ajoutes |
+| Boite Mise en page : fond clair en theme sombre, zone « Page {page} / {pages} » coupee | CORRIGE (theme, barre de titre, largeur) |
