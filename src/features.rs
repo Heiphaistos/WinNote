@@ -112,9 +112,14 @@ fn recover() -> Vec<String> {
     let a = app();
     let open: Vec<(Option<String>, Vec<u8>)> = (0..a.docs.len()).map(|i| (a.docs[i].path.clone(), cmds::text_of_doc(a, i))).collect();
     let pending = extras::recovery_pending(&dir, &open);
+    // l'onglet vide du démarrage ne reste pas à côté des documents récupérés
+    let blank = a.docs.len() == 1 && a.docs[0].path.is_none() && !a.docs[0].dirty && open[0].1.is_empty() && !pending.is_empty();
     for r in &pending {
         let enc = doc::Enc::ALL.get(r.enc).copied().unwrap_or(doc::Enc::Utf8);
         cmds::push_doc_full(a, None, Some((r.text.clone(), enc)), true, 0);
+    }
+    if blank {
+        cmds::cmd_close(0);
     }
     if !pending.is_empty() {
         recovery_snapshot(); // les copies sont à nous avant d'effacer les traces de la fenêtre disparue
