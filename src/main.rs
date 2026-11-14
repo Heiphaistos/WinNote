@@ -304,7 +304,10 @@ unsafe fn on_update_one(a: &mut App, m: updater::Msg) {
             session::save(a);
             match updater::apply(&path) {
                 Ok(()) => save_all_and_quit(a),
-                Err(e) => cmds::msg_box(&format!("Mise à jour impossible : {e}")),
+                Err(e) => {
+                    let _ = std::fs::remove_file(&path); // téléchargement inutilisable : ne pas le laisser dans %TEMP%
+                    cmds::msg_box(&format!("Mise à jour impossible : {e}"));
+                }
             }
         }
         updater::Msg::Ready(Err(e)) => cmds::msg_box(&format!("Mise à jour impossible : {e}")),
