@@ -34,6 +34,8 @@ pub mod notes;
 pub mod sci;
 #[path = "../textops.rs"]
 pub mod textops;
+#[path = "../textx.rs"]
+pub mod textx;
 #[path = "../theme.rs"]
 pub mod theme;
 #[path = "../vers.rs"]

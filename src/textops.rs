@@ -8,7 +8,7 @@ fn eol_str(s: crate::sci::HWND) -> &'static str {
     match send(s, sci::GETEOLMODE, 0, 0) { 0 => "\r\n", 1 => "\r", _ => "\n" }
 }
 
-fn range_text(s: crate::sci::HWND, a: isize, b: isize) -> String {
+pub(crate) fn range_text(s: crate::sci::HWND, a: isize, b: isize) -> String {
     let mut buf = vec![0u8; (b - a) as usize + 1];
     // SCI_GETTEXTRANGEFULL (2039) avec Sci_TextRangeFull { Sci_CharacterRangeFull chrg{a,b}; char* lpstrText }
     let mut tr: [isize; 3] = [a, b, buf.as_mut_ptr() as isize];
@@ -325,6 +325,14 @@ pub fn open_link() {
     };
     if let Some(n) = find("[[", "]]") {
         let name = n.split('|').next().unwrap_or(&n).split('#').next().unwrap_or("").trim().to_string();
+        if name.is_empty() {
+            // [[#Titre]] : saut vers un titre du document courant
+            let head = n.split('|').next().unwrap_or(&n).trim_start_matches('#');
+            if !crate::textx::goto_heading(head) {
+                msg_box("Titre introuvable dans ce document.");
+            }
+            return;
+        }
         let base = a.docs[a.cur].path.as_ref().and_then(|p| std::path::Path::new(p).parent().map(|d| d.to_path_buf())).or_else(|| a.root.as_ref().map(std::path::PathBuf::from));
         let Some(mut file) = base.and_then(|b| local_target(&b, &name)) else {
             msg_box("Lien refusé : une note doit rester dans le dossier du document (pas de chemin absolu, de « .. » ni de réseau).");

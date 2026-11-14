@@ -129,6 +129,14 @@ pub fn build() -> Menus {
         add(l, TITLECASE, "Première Lettre En Majuscule");
         add(l, TABS2SPACES, "Tabulations → espaces");
         add(l, SPACES2TABS, "Espaces → tabulations");
+        add(l, REFLOW, "Renvoyer les paragraphes à 80 colonnes");
+        let cv = sub(&[l], "Encoder / décoder la sélection");
+        for (i, t) in ["Base64 : encoder", "Base64 : décoder", "URL (%XX) : encoder", "URL (%XX) : décoder"].iter().enumerate() {
+            add(cv, CONVERT + i, t);
+        }
+        sep(l);
+        add(l, BRACE, "Aller au crochet correspondant");
+        add(l, BRACESEL, "Sélectionner jusqu'au crochet correspondant");
 
         let fm = sub(&both, "Format");
         add(fm, WRAP, "Retour automatique à la ligne");
@@ -152,6 +160,8 @@ pub fn build() -> Menus {
         add(md, MD_STRIKE, "Barré");
         add(md, MD_HILITE, "Surligné");
         add(md, MD_CODE, "Code en ligne");
+        sep(md);
+        add(md, TOC, "Insérer le sommaire");
         sep(md);
         add(md, MD_H1, "Titre 1");
         add(md, MD_H1 + 1, "Titre 2");

@@ -32,6 +32,7 @@ mod shell;
 mod sidebar;
 mod spell;
 mod textops;
+mod textx;
 mod theme;
 mod ui;
 mod updater;
