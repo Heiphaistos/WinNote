@@ -8,6 +8,8 @@ default-run = "winnote"
 [features]
 # Interface Linux (GTK3). A activer uniquement sous Linux : cargo build --release --features gtk-ui --bin winnote-gtk
 gtk-ui = ["dep:gtk", "dep:pangocairo"]
+# Crochets de test de la mise a jour (URL d'API locale http/file, cle publique de test). JAMAIS dans une release.
+test-hooks = []
 
 [[bin]]
 name = "winnote"
@@ -34,6 +36,9 @@ features = ["Win32_Globalization", "Win32_System_Com"]
 gtk = { version = "0.18", optional = true }
 pangocairo = { version = "0.18", optional = true }
 encoding_rs = "0.8"
+
+[dependencies]
+ed25519-compact = { version = "2", default-features = false }
 
 [build-dependencies]
 cc = "1"

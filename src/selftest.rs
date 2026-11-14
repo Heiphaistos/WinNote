@@ -396,6 +396,11 @@ autre").unwrap();
     cmds::save_doc(a, a.cur, false);
     t.check("enregistrement atomique : contenu écrit", &std::fs::read_to_string(&atom).unwrap_or_default(), "après enregistrement");
     t.check_bool("enregistrement atomique : aucun fichier temporaire", !std::fs::read_dir(&dir).map_or(true, |r| r.flatten().any(|e| e.file_name().to_string_lossy().ends_with(".tmp"))));
+    // ----- mise à jour : signature épinglée, faux serveur http local (build test-hooks) -----
+    #[cfg(feature = "test-hooks")]
+    for (name, ok) in crate::updater::e2e() {
+        t.check_bool(name, ok);
+    }
     // ----- fichier modifié sur le disque : rechargement automatique + suivi de fin -----
     let ext = dir.join("externe.txt");
     std::fs::write(&ext, "un").ok();

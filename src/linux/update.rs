@@ -32,15 +32,19 @@ fn push(m: Msg) {
     }
 }
 
+/// `WINNOTE_UPDATE_URL` (file:// ou http local) n'existe que dans les builds `test-hooks`, jamais dans une release.
+fn test_url() -> Option<std::ffi::OsString> {
+    if cfg!(feature = "test-hooks") { std::env::var_os("WINNOTE_UPDATE_URL") } else { None }
+}
+
 fn api_url() -> String {
-    // WINNOTE_UPDATE_URL permet de tester la chaîne sur un fichier local (file://...)
-    std::env::var("WINNOTE_UPDATE_URL").unwrap_or_else(|_| format!("https://api.github.com/repos/{REPO}/releases/latest"))
+    test_url().map(|u| u.to_string_lossy().into_owned()).unwrap_or_else(|| format!("https://api.github.com/repos/{REPO}/releases/latest"))
 }
 
 fn curl(url: &str, out: Option<&str>) -> Result<Vec<u8>, String> {
     let mut c = Command::new("curl");
     c.args(["-fsSL", "--max-time", "300", "-A", "WinNote-updater"]);
-    if std::env::var_os("WINNOTE_UPDATE_URL").is_none() {
+    if test_url().is_none() {
         c.args(["--proto", "=https", "--proto-redir", "=https"]); // pas de repli en clair ni de redirection vers file://
     }
     if let Some(o) = out {
@@ -96,10 +100,10 @@ pub fn check(manual: bool) {
     });
 }
 
-/// Télécharge à côté de la cible, vérifie l'empreinte, puis remplace (bloquant).
+/// Télécharge à côté de la cible, vérifie l'empreinte et la signature épinglée de `<url>.sig` (absente = refus), puis remplace (bloquant).
 pub fn install(f: &Found, target: &str) -> Result<(), String> {
-    // WINNOTE_UPDATE_URL (test local) lève la restriction : sinon HTTPS vers GitHub uniquement
-    if std::env::var_os("WINNOTE_UPDATE_URL").is_none() && !crate::vers::trusted_download(&f.url) {
+    // en build `test-hooks` avec WINNOTE_UPDATE_URL, la restriction est levée : sinon HTTPS vers GitHub uniquement
+    if test_url().is_none() && !crate::vers::trusted_download(&f.url) {
         return Err(format!("lien de téléchargement refusé (seul github.com en HTTPS est accepté) : {}", f.url));
     }
     let tmp = format!("{target}.new");
@@ -108,6 +112,13 @@ pub fn install(f: &Found, target: &str) -> Result<(), String> {
     if sha256_file(&tmp).as_deref() != Ok(f.sha.to_lowercase().as_str()) {
         let _ = std::fs::remove_file(&tmp);
         return Err("empreinte SHA-256 incorrecte : mise à jour refusée".into());
+    }
+    let checked = curl(&format!("{}.sig", f.url), None)
+        .map_err(|e| format!("signature de la mise à jour introuvable ({e}) : installation refusée"))
+        .and_then(|sig| crate::vers::verify_update(&f.version, &f.url, &f.sha, &sig));
+    if let Err(e) = checked {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(e);
     }
     replace(&tmp, target)
 }
