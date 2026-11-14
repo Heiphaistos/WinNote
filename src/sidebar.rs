@@ -75,7 +75,8 @@ fn insert(parent: HTREEITEM, text: &str, node: usize, children: bool) -> HTREEIT
     let a = app();
     unsafe {
         let mut item: TVITEMW = zeroed();
-        item.mask = TVIF_TEXT | TVIF_PARAM | TVIF_CHILDREN;
+        // cChildren = 0 explicite figerait « sans enfant » : le plan ne pourrait plus déplier ses sous-titres
+        item.mask = TVIF_TEXT | TVIF_PARAM | if children { TVIF_CHILDREN } else { 0 };
         let mut t = w(text);
         item.pszText = t.as_mut_ptr();
         item.lParam = node as isize;
@@ -132,6 +133,7 @@ pub fn show_outline() {
     let text = String::from_utf8_lossy(&buf[..n]).to_string();
     let md = crate::lang::LANGS[a.docs[a.cur].lang].lexer == "markdown";
     let mut stack: Vec<(usize, HTREEITEM)> = Vec::new();
+    let mut items: Vec<HTREEITEM> = Vec::new();
     for (level, title, i) in crate::notes::outline(&text, md) {
         while stack.last().is_some_and(|s| s.0 >= level) {
             stack.pop();
@@ -139,13 +141,15 @@ pub fn show_outline() {
         nodes().push(Node { path: String::new(), dir: false, loaded: true, line: i as isize });
         let parent = stack.last().map_or(0, |s| s.1);
         let it = insert(parent, &title, nodes().len() - 1, false);
-        if parent != 0 {
-            unsafe { SendMessageW(a.tree, 0x1102, 2, parent) };
-        }
+        items.push(it);
         stack.push((level, it));
     }
     unsafe {
-        SendMessageW(a.tree, 0x1102, 2, 0);
+        // tout déplier une fois l'arbre complet (un parent inséré sans enfant refuse d'être déplié trop tôt)
+        for &it in &items {
+            SendMessageW(a.tree, 0x1102, 2, it); // TVM_EXPAND
+        }
+        InvalidateRect(a.tree, null(), 1);
         InvalidateRect(a.side, null(), 0);
     }
 }

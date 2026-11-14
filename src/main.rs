@@ -43,7 +43,7 @@ use windows_sys::Win32::{
     Foundation::*,
     Graphics::Gdi::*,
     System::LibraryLoader::GetModuleHandleW,
-    UI::{HiDpi::{GetDpiForWindow, GetSystemMetricsForDpi}, Input::KeyboardAndMouse::SetFocus, Shell::*, WindowsAndMessaging::*},
+    UI::{HiDpi::GetSystemMetricsForDpi, Input::KeyboardAndMouse::SetFocus, Shell::*, WindowsAndMessaging::*},
 };
 
 pub fn w(s: &str) -> Vec<u16> {
@@ -160,7 +160,7 @@ fn mk_child(parent: HWND, class: &str, style: u32, id: isize) -> HWND {
 
 unsafe fn on_create(a: &mut App, h: HWND) {
     a.hwnd = h;
-    a.dpi = GetDpiForWindow(h).max(96);
+    a.dpi = ui::dpi_of(h);
     a.ui_font = ui::make_ui_font(a.dpi);
     a.title = mk_child(h, "WNTitle", 0, 8);
     a.tabs = mk_child(h, "WNTabs", WS_VISIBLE, 2);
@@ -398,7 +398,7 @@ unsafe extern "system" fn wndproc(h: HWND, m: u32, wp: WPARAM, lp: LPARAM) -> LR
             DefWindowProcW(h, m, wp, lp)
         }
         WM_DPICHANGED => {
-            a.dpi = (wp & 0xFFFF) as u32;
+            a.dpi = if cfg!(feature = "test-hooks") { ui::dpi_of(h) } else { (wp & 0xFFFF) as u32 };
             DeleteObject(a.ui_font);
             a.ui_font = ui::make_ui_font(a.dpi);
             let r = &*(lp as *const RECT);
@@ -547,6 +547,8 @@ fn main() {
         APP = Box::into_raw(a);
 
         let dpi = windows_sys::Win32::UI::HiDpi::GetDpiForSystem().max(96) as i32;
+        #[cfg(feature = "test-hooks")]
+        let dpi = std::env::var("WINNOTE_TEST_DPI").ok().and_then(|v| v.parse::<i32>().ok()).filter(|d| (96..=384).contains(d)).unwrap_or(dpi);
         let hwnd = CreateWindowExW(
             0, w("WinNoteMain").as_ptr(), w("WinNote").as_ptr(), WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
             CW_USEDEFAULT, CW_USEDEFAULT, 1100 * dpi / 96, 720 * dpi / 96, null_mut(), null_mut(), GetModuleHandleW(null()), null(),
