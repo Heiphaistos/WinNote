@@ -51,8 +51,8 @@ fn buttons() -> Vec<(Btn, RECT)> {
 pub fn layout_edits() {
     let a = app();
     unsafe {
-        MoveWindow(a.find_edit, scale(20), scale(14), scale(300), scale(16) + 4, 1);
-        MoveWindow(a.repl_edit, scale(20), scale(50), scale(300), scale(16) + 4, 1);
+        MoveWindow(a.find_edit, scale(20), scale(14), scale(300), scale(20), 1);
+        MoveWindow(a.repl_edit, scale(20), scale(50), scale(300), scale(20), 1);
         ShowWindow(a.repl_edit, if a.find_replace { SW_SHOW } else { SW_HIDE });
     }
 }

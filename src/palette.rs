@@ -188,7 +188,10 @@ fn place() {
     let wdt = (rc.right - scale(40)).min(scale(640));
     let rows = p.shown.len().clamp(1, ROWS) as i32;
     let h = head_h() + rows * row_h() + scale(8);
-    unsafe { SetWindowPos(a.palette, HWND_TOP, (rc.right - wdt) / 2, crate::ui::title_height() + scale(50), wdt, h, SWP_SHOWWINDOW) };
+    unsafe {
+        SetWindowPos(a.palette, HWND_TOP, (rc.right - wdt) / 2, crate::ui::title_height() + scale(50), wdt, h, SWP_SHOWWINDOW);
+        SetWindowRgn(a.palette, CreateRoundRectRgn(0, 0, wdt + 1, h + 1, scale(14), scale(14)), 1); // coins arrondis sans pixels noirs
+    }
 }
 
 pub fn open(mode: Mode) {

@@ -8,6 +8,14 @@ use windows_sys::Win32::{
     UI::{Input::KeyboardAndMouse::*, WindowsAndMessaging::*},
 };
 
+/// DPI effectif d'une fenêtre ; le build `test-hooks` (jamais publié) accepte `WINNOTE_TEST_DPI` (96..384) pour simuler 100..400 % sans toucher à l'écran.
+pub fn dpi_of(h: HWND) -> u32 {
+    #[cfg(feature = "test-hooks")]
+    if let Some(d) = std::env::var("WINNOTE_TEST_DPI").ok().and_then(|v| v.parse::<u32>().ok()).filter(|d| (96..=384).contains(d)) {
+        return d;
+    }
+    unsafe { windows_sys::Win32::UI::HiDpi::GetDpiForWindow(h).max(96) }
+}
 pub fn scale(v: i32) -> i32 {
     v * app().dpi as i32 / 96
 }
@@ -87,7 +95,7 @@ unsafe fn round_fill(dc: HDC, r: &RECT, color: u32, rad: i32) {
 }
 
 unsafe fn line(dc: HDC, color: u32, wd: i32, x1: i32, y1: i32, x2: i32, y2: i32) {
-    let p = CreatePen(PS_SOLID, wd, color);
+    let p = CreatePen(PS_SOLID, scale(wd).max(1), color); // épaisseur proportionnelle au DPI (croix, plus)
     let o = SelectObject(dc, p);
     MoveToEx(dc, x1, y1, std::ptr::null_mut());
     LineTo(dc, x2, y2);

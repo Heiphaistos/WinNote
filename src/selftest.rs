@@ -98,6 +98,39 @@ pub fn run(log_path: &str) -> i32 {
     cmds::on_command(DELLINE);
     t.check("supprimer la ligne", &get(), "a\nb");
 
+    // ----- parité Notepad++ / Obsidian : crochets, sommaire, renvoi, Base64, URL, saut vers un titre -----
+    set("f(a[1], {b})");
+    send(a.sci, sci::SETSEL, 1, 1);
+    cmds::on_command(BRACE);
+    t.check("aller au crochet correspondant", &send(a.sci, sci::GETCURRENTPOS, 0, 0).to_string(), "11");
+    send(a.sci, sci::SETSEL, 1, 1);
+    cmds::on_command(BRACESEL);
+    t.check("sélectionner jusqu'au crochet", &format!("{}-{}", send(a.sci, sci::GETSELSTART, 0, 0), send(a.sci, sci::GETSELEND, 0, 0)), "1-12");
+    set("# A\n## B\n");
+    cmds::on_command(TOC);
+    t.check("insérer le sommaire", &get(), "- [[#A]]\n  - [[#B]]\n# A\n## B\n");
+    set("aaa bbb ccc\nddd\n\neee");
+    sel_all();
+    cmds::on_command(REFLOW);
+    t.check("renvoyer les paragraphes", &get(), "aaa bbb ccc ddd\n\neee");
+    set("foo");
+    sel_all();
+    cmds::on_command(CONVERT);
+    t.check("Base64 encoder", &get(), "Zm9v");
+    sel_all();
+    cmds::on_command(CONVERT + 1);
+    t.check("Base64 décoder", &get(), "foo");
+    set("a b&é");
+    sel_all();
+    cmds::on_command(CONVERT + 2);
+    t.check("URL encoder", &get(), "a%20b%26%C3%A9");
+    sel_all();
+    cmds::on_command(CONVERT + 3);
+    t.check("URL décoder", &get(), "a b&é");
+    set("# A\ntexte\n## Cible\nvoir [[#cible]]");
+    send(a.sci, sci::SETSEL, 28, 28);
+    cmds::on_command(OPENLINK);
+    t.check("lien [[#Titre]] : saut au titre", &caret_line().to_string(), "2");
     // ----- casse et espaces -----
     set("hello wORLD");
     sel_all();
@@ -683,6 +716,22 @@ fn b() {
     t.check("convertir en LF", &get(), "a\nb");
     cmds::on_command(EOL);
     t.check("convertir en CRLF", &get(), "a\r\nb");
+
+    // ----- session complète : onglet épinglé, langage choisi à la main, curseur, texte non enregistré -----
+    cmds::new_doc(a);
+    set("a\nb\nc");
+    a.docs[a.cur].dirty = true;
+    a.docs[a.cur].pinned = true;
+    lang("Python");
+    send(a.sci, sci::SETSEL, 2, 2);
+    crate::session::save(a);
+    let line = std::fs::read_to_string(std::path::PathBuf::from(std::env::var("APPDATA").unwrap_or_default()).join("WinNote").join("session").join("session.txt")).unwrap_or_default();
+    t.check_bool("session : épinglé et langage écrits", line.lines().any(|l| l.ends_with("\t1\tPython")));
+    let before = a.docs.len();
+    crate::session::restore(a);
+    let back = a.docs.iter().skip(before).find(|d| d.pinned && LANGS[d.lang].name == "Python");
+    t.check_bool("session : onglet restauré épinglé, en Python", back.is_some());
+    t.check("session : curseur restauré", &back.map_or(-1, |d| d.caret).to_string(), "2");
 
     let _ = std::fs::remove_dir_all(&dir);
     t.log.push(format!("{} échec(s)", t.fails));

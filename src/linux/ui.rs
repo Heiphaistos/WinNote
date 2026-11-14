@@ -520,6 +520,11 @@ pub fn on_command(id: usize) {
             }
             sync_checks();
         }
+        BRACE => crate::textx::goto_brace(false),
+        BRACESEL => crate::textx::goto_brace(true),
+        TOC => crate::textx::insert_toc(),
+        REFLOW => crate::textx::reflow_cmd(),
+        CONVERT..=935 => crate::textx::convert(id - CONVERT),
         TRIM => textops::trim(),
         JOIN => textops::join(),
         TOGGLECOMMENT => textops::toggle_comment(),
@@ -787,6 +792,13 @@ fn build_menu(ag: &gtk::AccelGroup) -> gtk::MenuBar {
     add(&l, ag, "Première Lettre En Majuscule", None, TITLECASE);
     add(&l, ag, "Tabulations → espaces", None, TABS2SPACES);
     add(&l, ag, "Espaces → tabulations", None, SPACES2TABS);
+    add(&l, ag, "Renvoyer les paragraphes à 80 colonnes", None, REFLOW);
+    for (t, i) in [("Base64 : encoder la sélection", CONVERT), ("Base64 : décoder la sélection", CONVERT + 1), ("URL (%XX) : encoder la sélection", CONVERT + 2), ("URL (%XX) : décoder la sélection", CONVERT + 3)] {
+        add(&l, ag, t, None, i);
+    }
+    l.append(&gtk::SeparatorMenuItem::new());
+    add(&l, ag, "Aller au crochet correspondant", None, BRACE);
+    add(&l, ag, "Sélectionner jusqu'au crochet correspondant", None, BRACESEL);
 
     let fm = sub(&bar, "Format");
     check(&fm, ag, "Retour automatique à la ligne", None, WRAP);
@@ -817,6 +829,8 @@ fn build_menu(ag: &gtk::AccelGroup) -> gtk::MenuBar {
     add(&md, ag, "Barré", None, MD_STRIKE);
     add(&md, ag, "Surligné", None, MD_HILITE);
     add(&md, ag, "Code en ligne", None, MD_CODE);
+    md.append(&gtk::SeparatorMenuItem::new());
+    add(&md, ag, "Insérer le sommaire", None, TOC);
     md.append(&gtk::SeparatorMenuItem::new());
     add(&md, ag, "Titre 1", None, MD_H1);
     add(&md, ag, "Titre 2", None, MD_H1 + 1);

@@ -221,9 +221,11 @@ fn alive(pid: u32) -> bool {
 fn alive(pid: u32) -> bool {
     Path::new(&format!("/proc/{pid}")).exists()
 }
-#[cfg(not(any(windows, target_os = "linux")))]
-fn alive(_pid: u32) -> bool {
-    false
+/// macOS et autres Unix : pas de /proc ; `kill -0` n'envoie rien et réussit si le processus existe
+/// (sans quoi toute fenêtre paraîtrait orpheline et la seconde fenêtre « reprendrait » les copies de la première).
+#[cfg(all(unix, not(target_os = "linux")))]
+fn alive(pid: u32) -> bool {
+    std::process::Command::new("kill").arg("-0").arg(pid.to_string()).stderr(std::process::Stdio::null()).status().is_ok_and(|s| s.success())
 }
 
 /// Pose le verrou de cette fenêtre (son pid).

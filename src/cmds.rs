@@ -838,6 +838,11 @@ pub fn on_command(id: usize) {
             crate::prefs::set_history(!crate::prefs::history());
             style_editor(a);
         }
+        BRACE => crate::textx::goto_brace(false),
+        BRACESEL => crate::textx::goto_brace(true),
+        TOC => crate::textx::insert_toc(),
+        REFLOW => crate::textx::reflow_cmd(),
+        CONVERT..=935 => crate::textx::convert(id - CONVERT),
         TRIM => textops::trim(),
         JOIN => textops::join(),
         TOGGLECOMMENT => textops::toggle_comment(),
