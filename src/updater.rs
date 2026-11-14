@@ -221,6 +221,7 @@ pub fn apply(new_exe: &str) -> Result<(), String> {
         let _ = std::fs::rename(&old, &cur);
         return Err(e.to_string());
     }
+    let _ = std::fs::remove_file(new_exe); // copie faite : ne pas laisser le téléchargement dans %TEMP%
     std::process::Command::new(&cur).arg("--updated").spawn().map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -228,7 +229,16 @@ pub fn apply(new_exe: &str) -> Result<(), String> {
 /// Au démarrage : supprime l'ancien exe laissé par la mise à jour précédente.
 pub fn cleanup() {
     if let Ok(cur) = std::env::current_exe() {
-        let _ = std::fs::remove_file(cur.with_extension("old.exe"));
+        let old = cur.with_extension("old.exe");
+        // l'ancien processus peut encore tenir son exe quelques instants : on réessaie hors du fil principal
+        std::thread::spawn(move || {
+            for _ in 0..20 {
+                if !old.exists() || std::fs::remove_file(&old).is_ok() {
+                    return;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(500));
+            }
+        });
     }
 }
 
